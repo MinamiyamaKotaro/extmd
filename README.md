@@ -5,7 +5,7 @@ Excelファイル（.xlsx）をMarkdownに変換するCLIツール（Rust製）�
 > **ステータス: 実装中。** 設計（要件定義・アーキテクチャ設計・詳細設計・セキュリティレビュー）は
 > 完了し、[Issue #17](https://github.com/MinamiyamaKotaro/extmd/issues/17)に基づき
 > `docs/design/architecture.md`のパイプライン順（domain → reader → analysis → renderer → cli）で
-> 実装を進めています。現時点では`domain`層のみ実装済みで、CLIとして動作する状態には
+> 実装を進めています。現時点では`domain`層・`reader`層が実装済みで、CLIとして動作する状態には
 > まだ達していません。
 
 ## 特徴
@@ -54,15 +54,15 @@ extmdをそのまま呼び出す等）での利用は、悪意あるファイル
 [アーキテクチャ設計書](docs/design/architecture.md)のパイプライン
 （Reader → StrategySelector → Analyzer → Renderer）にそのまま対応させた構成にしています。
 CLI（`main.rs`）はライブラリ（`lib.rs`）を薄く呼び出すだけにし、変換ロジック本体を
-`main.rs`を経由せずに単体テストできるようにします。`domain/`は実装済み、それ以外
-（`reader/`・`analysis/`・`renderer/`・`cli.rs`・`main.rs`）は[Issue #17](https://github.com/MinamiyamaKotaro/extmd/issues/17)で今後実装予定です。
+`main.rs`を経由せずに単体テストできるようにします。`domain/`・`reader/`は実装済み、それ以外
+（`analysis/`・`renderer/`・`cli.rs`・`main.rs`）は[Issue #17](https://github.com/MinamiyamaKotaro/extmd/issues/17)で今後実装予定です。
 
 ```
 extmd/
 ├── Cargo.toml
 ├── src/
 │   ├── main.rs              # (未実装) バイナリエントリポイント。cli::build_config()を呼び、extmd::convert()を実行するだけ
-│   ├── lib.rs                # 公開API。現状はpub mod domain;のみ（convert()等はcli実装時に追加）
+│   ├── lib.rs                # 公開API。現状はpub mod domain; pub mod reader;のみ（convert()等はcli実装時に追加）
 │   ├── cli.rs                 # (未実装) clapによるCLI引数定義（--strategy, --sheet, -o, --split, --clean等）とConvertConfigへの変換（docs/design/cli.md参照）
 │   ├── domain/                # 実装済み。コアドメイン型。他のどの層にも依存しない最下層（docs/design/domain/参照）
 │   │   ├── mod.rs
@@ -71,7 +71,7 @@ extmd/
 │   │   ├── sheet.rs                # Sheet, MergeRange
 │   │   ├── block.rs                 # Block, BlockSource
 │   │   └── document.rs               # RowKind, ResolvedRow, RenderedRow, Document
-│   ├── reader/                 # (未実装) [1] Reader: xlsxファイル → Sheet（docs/design/reader/参照）
+│   ├── reader/                 # 実装済み。[1] Reader: xlsxファイル → Sheet（docs/design/reader/参照）
 │   │   ├── mod.rs
 │   │   ├── xlsx.rs               # umya-spreadsheetでの読み込み・他モジュールの統合
 │   │   ├── cell_mapper.rs         # umya-spreadsheet::Cell → domain::Cell/CellValueの変換
@@ -94,8 +94,9 @@ extmd/
 │       ├── table.rs               # RowKind::TableRow行のMarkdownパイプテーブル変換
 │       ├── escape.rs              # Markdown特殊文字のエスケープ
 │       └── output.rs              # OutputTargetに基づく書き込み・ファイル名サニタイズ
-├── tests/                    # (未実装) 結合テスト・スナップショットテスト（domain/の単体テストは各ファイル内に実装済み）
-│   └── fixtures/                # 方眼紙/通常表のサンプルxlsx
+├── tests/
+│   ├── reader.rs                # readerの結合テスト（umya-spreadsheetの実writer/readerを介した往復検証）
+│   └── fixtures/                # (未実装) 方眼紙/通常表のサンプルxlsx
 └── docs/
     ├── requirement/
     ├── design/
@@ -121,7 +122,7 @@ extmd/
 3. セキュリティ観点の整理（完了、[セキュリティ設計レビュー](docs/security/design-review.md)）
 4. 実装・テスト（進行中、[Issue #17](https://github.com/MinamiyamaKotaro/extmd/issues/17)）
    - [x] `domain`層
-   - [ ] `reader`層
+   - [x] `reader`層
    - [ ] `analysis`層
    - [ ] `renderer`層
    - [ ] `cli`（`main.rs`/`cli.rs`/`lib.rs`公開API）
