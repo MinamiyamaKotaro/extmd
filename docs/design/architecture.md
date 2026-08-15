@@ -28,7 +28,7 @@
 xlsxファイル
     │
     ▼
-[1] Reader        … calamine/umya-spreadsheet でセル・書式情報を読み込み Sheet を構築
+[1] Reader        … umya-spreadsheet でセル・書式情報を読み込み Sheet を構築
     │
     ▼
 [2] StrategySelector … CLI指定 or 自動判定で AnalysisStrategy を選択
@@ -151,8 +151,14 @@ pub trait AnalysisStrategy {
 
 ```rust
 pub struct GridPaperStrategy {
-    /// 推定描画幅の算出に使う全角文字換算係数など、チューニング用パラメータ。
-    pub overflow_threshold: f64,
+    overflow_threshold: f64,
+    weights: Weights,
+}
+
+impl GridPaperStrategy {
+    pub(in crate::analysis) fn new(overflow_threshold: f64, weights: Weights) -> Self {
+        Self { overflow_threshold, weights }
+    }
 }
 
 impl AnalysisStrategy for GridPaperStrategy {
@@ -184,7 +190,15 @@ impl AnalysisStrategy for GridPaperStrategy {
 CLIの `--no-overflow-merge` はこの戦略を強制的に選択することと等価にする。
 
 ```rust
-pub struct TabularStrategy;
+pub struct TabularStrategy {
+    weights: Weights,
+}
+
+impl TabularStrategy {
+    pub(in crate::analysis) fn new(weights: Weights) -> Self {
+        Self { weights }
+    }
+}
 
 impl AnalysisStrategy for TabularStrategy {
     fn id(&self) -> &'static str { "tabular" }

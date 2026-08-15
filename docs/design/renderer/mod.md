@@ -27,7 +27,7 @@
 ## 3. 設計方針
 
 - `renderer`は[domain/mod.md 2章](../domain/mod.md#2-設計方針)の依存方向の方針に従い、
-  `domain`にのみ依存する。[アーキテクチャ設計書1章](../architecture.md#1-設計方針)が明記する
+  `domain`にのみ依存する。[アーキテクチャ設計書2章](../architecture.md#2-パイプライン全体像)が明記する
   「RendererはStrategyに依存しない」方針の通り、`analysis`には一切依存しない。
 - [analysis/mod.md 2章](../analysis/mod.md#2-設計方針)と同様、内部モジュール
   （`flow.rs`/`table.rs`/`escape.rs`/`output.rs`）は`renderer`外部に直接公開しない。
@@ -50,6 +50,16 @@ pub enum OutputTarget {
 pub enum RendererError {
     Io(std::io::Error),
 }
+
+impl std::fmt::Display for RendererError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RendererError::Io(e) => write!(f, "{}", e),
+        }
+    }
+}
+
+impl std::error::Error for RendererError {}
 
 /// `Analyzer`が生成した各シートの`Document`をMarkdownへ変換し、`target`へ書き出す。
 /// `target`の構築（CLI引数の解釈）は呼び出し側（`lib.rs`）の責務とし、

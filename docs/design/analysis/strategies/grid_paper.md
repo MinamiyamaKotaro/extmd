@@ -111,7 +111,7 @@ fn classify_row(&self, row: &ResolvedRow) -> RowKind {
 }
 ```
 
-「少数」（3ブロック以下）・「大きなブロック」（`span() > 1`、[domain/block.md](../domain/block.md)）
+「少数」（3ブロック以下）・「大きなブロック」（`span() > 1`、[domain/block.md](../../domain/block.md)）
 の具体的な基準値は暫定であり、実データでの検証が必要（6章）。
 
 ## 5. `heading_level`
