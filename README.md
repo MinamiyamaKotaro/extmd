@@ -19,6 +19,20 @@ extmdは、セルからはみ出して表示されている文字列を検出し
 シートの構造的特徴からどちらの解析ルールを適用すべきかを自動判定する
 （明示指定も可能な）設計を採用しています。
 
+## インストール
+
+### crates.ioから（Rustツールチェーンがある場合）
+
+```sh
+cargo install extmd
+```
+
+### プリビルドバイナリ（Rustツールチェーン不要）
+
+[Releases](https://github.com/MinamiyamaKotaro/extmd/releases)ページから、お使いのOS向けの
+アーカイブ（Linux/macOS/Windows、x86_64/aarch64）をダウンロードし、`extmd`（Windowsは
+`extmd.exe`）をPATHの通ったディレクトリに配置してください。
+
 ## ドキュメント
 
 - [要件定義書](docs/requirement/requirements.md)
@@ -135,6 +149,29 @@ extmd/
    - [x] `analysis`層
    - [x] `renderer`層
    - [x] `cli`（`main.rs`/`cli.rs`/`lib.rs`公開API）
+
+## リリース手順（メンテナ向け）
+
+`v[0-9]+.[0-9]+.[0-9]+`形式のタグをpushすると、`.github/workflows/release.yml`が
+以下を自動実行します。
+
+1. `fmt`/`clippy`/`test`の再検証（タグが指すコミットがCIを通過済みとは限らないため）
+2. GitHub Releaseの作成
+3. Linux/macOS/Windows（x86_64/aarch64）向けバイナリのビルドとReleaseへのアップロード
+4. crates.ioへの`cargo publish`
+
+手順:
+
+```sh
+# 1. Cargo.tomlのversionを更新してコミット
+# 2. タグを打ってpush（vプレフィックス必須、Cargo.tomlのversionと一致させる）
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+初回のみ、リポジトリのSecrets（Settings > Secrets and variables > Actions）に
+crates.ioの発行したAPIトークンを`CARGO_REGISTRY_TOKEN`として登録しておく必要があります
+（crates.ioにログイン後、Account Settings > API Tokensから発行）。
 
 ## ライセンス
 

@@ -4,6 +4,14 @@ version = "0.1.0"
 edition = "2021"
 description = "Excel (.xlsx) to Markdown converter with overflow-cell merging support."
 license = "MIT"
+repository = "https://github.com/MinamiyamaKotaro/extmd"
+readme = "README.md"
+keywords = ["excel", "xlsx", "markdown", "cli", "converter"]
+categories = ["command-line-utilities", "text-processing"]
+# ビルド・インストールに不要な開発用コンテンツ（CI設定・設計ドキュメント・fixture生成
+# スクリプト）はcrates.ioへ公開するパッケージから除く。tests/（fixturesを含む）は
+# 公開後のソースからでも `cargo test` を再現できるよう残す。
+exclude = [".github/", "docs/", "examples/"]
 
 [dependencies]
 chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
