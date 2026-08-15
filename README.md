@@ -22,7 +22,7 @@ extmdは、セルからはみ出して表示されている文字列を検出し
 
 - [要件定義書](docs/requirement/requirements.md)
 - [アーキテクチャ設計書](docs/design/architecture.md)
-- [ドメイン設計書](docs/design/domain/mod.md)
+- [Domain設計書](docs/design/domain/mod.md)
 - [Reader設計書](docs/design/reader/mod.md)
 - [Analysis設計書](docs/design/analysis/mod.md)
 - [Renderer設計書](docs/design/renderer/mod.md)
@@ -95,7 +95,8 @@ extmd/
 │   └── conversion.rs             # 結合テスト・スナップショットテスト
 └── docs/
     ├── requirement/
-    └── design/
+    ├── design/
+    └── security/
 ```
 
 各ディレクトリと設計書の対応:

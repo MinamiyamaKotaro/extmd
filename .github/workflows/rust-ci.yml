@@ -1,0 +1,48 @@
+name: Rust CI
+
+# Cargoプロジェクト（src/, Cargo.toml等）に変更があったPRでのみ実行する。
+# Rustのビルド・Lintはクレート単位で行うツールチェーンのため（単一ファイル単位の
+# チェックはできない）、「変更ファイルのみを対象にする」は path フィルタでの
+# ジョブ起動要否の判定として扱う（docs-check.ymlと同じ考え方）。
+#
+# 現時点ではCargoプロジェクト自体が未作成（Issue #17）のため、対象パスに変更がない
+# 限りこのワークフローは起動しない。
+on:
+  pull_request:
+    paths:
+      - "**/*.rs"
+      - "**/Cargo.toml"
+      - "**/Cargo.lock"
+      - ".github/workflows/rust-ci.yml"
+
+concurrency:
+  group: rust-ci-${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: fmt / clippy / build / test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          components: rustfmt, clippy
+
+      - name: Check formatting (cargo fmt)
+        run: cargo fmt --all -- --check
+
+      - name: Lint (cargo clippy)
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Build
+        run: cargo build --all-targets --all-features
+
+      - name: Test
+        run: cargo test --all-features

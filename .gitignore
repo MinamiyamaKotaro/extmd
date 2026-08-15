@@ -1,3 +1,5 @@
 # Dotfiles / dot directories (e.g. .claude/ tooling config)
 .*
 !.gitignore
+!.github/
+!.markdownlint-cli2.jsonc

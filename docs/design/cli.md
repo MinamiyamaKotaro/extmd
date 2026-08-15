@@ -131,21 +131,24 @@ pub struct CliArgs {
 [renderer/output.md 6章](renderer/output.md#6-cliとの境界) の設計方針に基づき、パスの決定とタイムスタンプの付与は `cli.rs`/`main.rs` (呼び出し側) で確定させ、`OutputTarget` を構築する。
 
 #### A) タイムスタンプサフィックスの生成
+
 `timestamp` フラグが `true` の場合、実行時のローカル日時から `_YYYYMMDD_HHMMSS` 形式のサフィックス文字列を生成する（例: `_20260815_203000`）。
 
-#### B) `split` が `true` の場合 (`OutputTarget::SplitDirectory`):
+#### B) `split` が `true` の場合 (`OutputTarget::SplitDirectory`)
+
 - **出力先ディレクトリパスの決定**:
   - `output` ( `-o` ) が指定されている場合: 指定されたパスをベースディレクトリとする。
   - `output` ( `-o` ) が指定されていない場合: 入力ファイル名 (`INPUT.xlsx`) の拡張子を除いたベース名 (例: `INPUT`) をベースディレクトリ名とする。
 - **タイムスタンプの適用**:
   - `timestamp` が `true` の場合、決定したベースディレクトリ名の末尾にタイムスタンプサフィックスを付与する (例: `output_20260815_203000/`)。
-- **クリーンアップ (`clean`):**
+- **クリーンアップ (`clean`)**:
   - `--clean` が `true` の場合、出力先ディレクトリが決定した後に、**ディレクトリ直下の拡張子 `.md` を持つファイルのみ**をすべて削除する。ディレクトリ全体の削除 (`remove_dir_all`) は、ユーザーが誤って重要なフォルダ（例: `/` や `docs/`）を指定した場合の全削除リスクを防ぐため禁止し、対象拡張子のファイル削除に留める。
 
-#### C) `split` が `false` の場合 (`OutputTarget::SingleFile` または `OutputTarget::Stdout`):
-- **`output` が指定されている場合 (`OutputTarget::SingleFile`):**
+#### C) `split` が `false` の場合 (`OutputTarget::SingleFile` または `OutputTarget::Stdout`)
+
+- **`output` が指定されている場合 (`OutputTarget::SingleFile`)**:
   - `timestamp` が `true` の場合、出力ファイルの拡張子 (`.md` 等) の直前にタイムスタンプサフィックスを挿入する（例: `-o out.md` -> `out_20260815_203000.md`）。
-- **`output` が指定されていない場合 (`OutputTarget::Stdout`):**
+- **`output` が指定されていない場合 (`OutputTarget::Stdout`)**:
   - 標準出力へ書き出す。
   - `timestamp` が `true` の場合、標準出力は名前を持たないため警告ログを標準エラー出力に出力した上で、タイムスタンプ指定は無視する。
 
@@ -189,9 +192,11 @@ Zip Bombそのものは防げない残存リスクである点は同節を参照
 ## 5. エラーハンドリングと終了コード
 
 ### 5.1. 引数パース時のエラー (Clapによる制御)
+
 引数の不足、不正な型、または衝突するオプション (例: `--strategy` と `--no-overflow-merge` の同時指定) が渡された場合、`clap` が自動でエラーメッセージと使い方 (Usage) を標準エラー出力に表示し、**終了コード `2`** で即座にプロセスを終了する。
 
 ### 5.2. 変換プロセス実行時のエラー (`ConvertError`)
+
 `lib::convert` が返すエラー型 `ConvertError` について、`main.rs` は以下の形式で標準エラー出力へメッセージを出力し、**終了コード `1`** で終了する。
 
 | エラー種別 | 原因 | エラーメッセージ形式 (stderr) |
