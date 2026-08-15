@@ -14,19 +14,31 @@ pub(crate) fn map_cell(
     cell: &umya_spreadsheet::Cell,
     column_width: f64, // grid_builder.rsが列単位で解決し、セル単位で渡す
 ) -> domain::Cell {
-    let style = cell.style();
+    let style = cell.style(); // Style自体はOptionではない（&Style）
+    let format_code = style.numbering_format().map(|nf| nf.format_code());
+
     domain::Cell {
-        value: map_value(cell),
+        value: map_value(cell, format_code),
         column_width,
-        wrap_text: style.alignment().wrap_text(),
-        alignment: map_alignment(style.alignment().horizontal()),
-        font: domain::FontInfo {
-            size_pt: style.font().size() as f32,
-            bold: style.font().bold(),
-        },
-        number_format: style.numbering_format().format_code().to_string().into(),
+        // alignment()/font()/numbering_format()はいずれも
+        // 未設定の場合があるためOption<&T>を返す（3.0.0時点のAPI）。
+        // 未設定時はExcelの既定値（左揃え・折り返しなし・既定フォント）を採用する。
+        wrap_text: style.alignment().is_some_and(|a| a.wrap_text()),
+        alignment: style
+            .alignment()
+            .map_or(domain::Alignment::default(), |a| map_alignment(a.horizontal())),
+        font: style.font().map_or(DEFAULT_FONT, |f| domain::FontInfo {
+            size_pt: f.size() as f32,
+            bold: f.bold(),
+        }),
+        number_format: format_code
+            .filter(|code| *code != "General")
+            .map(str::to_string),
     }
 }
+
+/// スタイル未設定セルに使うExcelの既定フォント（游ゴシック相当、11pt・非太字）。
+const DEFAULT_FONT: domain::FontInfo = domain::FontInfo { size_pt: 11.0, bold: false };
 ```
 
 ## 2. 値の変換（数式セルの解決方針を含む）
@@ -43,22 +55,28 @@ pub(crate) fn map_cell(
 値を取得する。** 数式かどうかの分岐は不要。
 
 ```rust
-fn map_value(cell: &umya_spreadsheet::Cell) -> domain::CellValue {
+fn map_value(cell: &umya_spreadsheet::Cell, format_code: Option<&str>) -> domain::CellValue {
     use umya_spreadsheet::CellRawValue;
     match cell.raw_value() {
         CellRawValue::Empty => domain::CellValue::Empty,
-        CellRawValue::Numeric(n) if is_date_formatted(cell) => {
-            domain::CellValue::Date(date::from_serial(n)) // date.md参照
+        CellRawValue::Numeric(n) if format_code.is_some_and(date::is_date_formatted) => {
+            domain::CellValue::Date(date::from_serial(*n)) // date.md参照
         }
-        CellRawValue::Numeric(n) => domain::CellValue::Number(n),
-        CellRawValue::Bool(b) => domain::CellValue::Bool(b),
-        CellRawValue::String(s) => domain::CellValue::String(s.into_string()),
-        CellRawValue::RichText(rt) => domain::CellValue::String(rt.get_text()),
-        CellRawValue::Lazy(s) => domain::CellValue::String(s.into_string()),
+        CellRawValue::Numeric(n) => domain::CellValue::Number(*n),
+        CellRawValue::Bool(b) => domain::CellValue::Bool(*b),
+        CellRawValue::String(s) => domain::CellValue::String(s.to_string()),
+        CellRawValue::RichText(rt) => domain::CellValue::String(rt.get_text().into_owned()),
+        CellRawValue::Lazy(s) => domain::CellValue::String(s.to_string()),
         CellRawValue::Error(e) => domain::CellValue::String(format!("#{e}")), // 3章参照
     }
 }
 ```
+
+`cell.raw_value()`は`&CellRawValue`を返すため、matchアームの束縛はいずれも参照になる
+（`n: &f64`, `b: &bool`, `s: &Box<str>`, `rt: &RichText`）。`Numeric`/`Bool`は値型なので
+`*n`/`*b`でデリファレンスし、`String`/`Lazy`（`Box<str>`）は`.to_string()`、
+`RichText::get_text()`は`Cow<'static, str>`を返すため`.into_owned()`で所有権のある
+`String`に変換する。
 
 ## 3. `CellRawValue::Error` の扱い（未確定事項）
 

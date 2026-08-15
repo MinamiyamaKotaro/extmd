@@ -29,8 +29,9 @@ pub(crate) fn build_grid(
     cols: usize,
 ) -> domain::Grid<domain::Cell> {
     // 1. 列幅を先に解決する（列ごとに1回、cols回だけ umya-spreadsheet を問い合わせる）
+    // column_dimension_by_numberは`col: u32`を値渡しで受け取る（&u32ではない）。
     let column_widths: Vec<f64> = (1..=cols as u32)
-        .map(|col| ws.column_dimension_by_number(&col)
+        .map(|col| ws.column_dimension_by_number(col)
             .map(|c| c.width())
             .unwrap_or(DEFAULT_COLUMN_WIDTH)) // Excel既定幅(8.38)
         .collect();
@@ -41,7 +42,9 @@ pub(crate) fn build_grid(
         .collect();
 
     // 3. 実際に値の存在するセルだけを走査し、該当インデックスを上書きする
-    for excel_cell in ws.cell_collection() {
+    // Worksheetに`cell_collection()`というメソッドは存在しない。全セルを取得するには
+    // `cells() -> Vec<&Cell>`を使う（3.1参照）。
+    for excel_cell in ws.cells() {
         let (col, row) = (excel_cell.coordinate().col_num(), excel_cell.coordinate().row_num());
         if row == 0 || col == 0 || (row as usize) > rows || (col as usize) > cols {
             continue; // 3.1参照
@@ -57,7 +60,7 @@ pub(crate) fn build_grid(
 
 ### 3.1 走査対象セルの境界チェック
 
-`Worksheet::cell_collection()` はワークシートが内部的に保持する全セルを返すが、
+`Worksheet::cells()` はワークシートが内部的に保持する全セル（`Vec<&Cell>`）を返すが、
 理論上 `highest_column_and_row()` で求めた範囲（`rows`/`cols`）を超えるセルは
 存在しないはずである。ただし、umya-spreadsheet側の実装詳細に依存した前提を
 Reader側で過信しないよう、範囲外インデックスへの書き込みで `cells` の境界を

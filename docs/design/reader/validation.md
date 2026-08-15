@@ -27,12 +27,15 @@ pub(crate) fn collect_valid_merges(
 }
 
 fn to_domain_range(range: &umya_spreadsheet::Range) -> Option<domain::MergeRange> {
-    // umya-spreadsheetは1-based座標。0-based(Gridの座標系)へ変換する。
+    // coordinate_start_row()等は`Option<&RowReference>`/`Option<&ColumnReference>`を返す
+    // （u32を直接返すわけではない）。実際の数値は`RowReference::num()`/
+    // `ColumnReference::num()`で取得する。umya-spreadsheetは1-based座標のため、
+    // 0-based(Gridの座標系)へ変換するには-1する。
     Some(domain::MergeRange {
-        row_start: range.coordinate_start_row()?.checked_sub(1)? as usize,
-        row_end: range.coordinate_end_row()?.checked_sub(1)? as usize,
-        col_start: range.coordinate_start_col()?.checked_sub(1)? as usize,
-        col_end: range.coordinate_end_col()?.checked_sub(1)? as usize,
+        row_start: range.coordinate_start_row()?.num().checked_sub(1)? as usize,
+        row_end: range.coordinate_end_row()?.num().checked_sub(1)? as usize,
+        col_start: range.coordinate_start_col()?.num().checked_sub(1)? as usize,
+        col_end: range.coordinate_end_col()?.num().checked_sub(1)? as usize,
     })
 }
 
