@@ -21,6 +21,11 @@ pub struct ConvertConfig {
     pub strategy_id: String,
     pub strategy_config: analysis::StrategyConfig,
     pub output_target: renderer::OutputTarget,
+    /// `--split`時、出力先ディレクトリ内の既存`.md`ファイルを書き込み前に削除するか
+    /// (`--clean`)。`convert`が入力の妥当性確認をすべて成功させた後、書き込み直前に
+    /// 実行する(`build_config`実行時点で削除すると、後続の`convert`が失敗した場合でも
+    /// 出力先の既存ファイルが消えてしまうため)。
+    pub clean: bool,
     /// 1シートあたりに許容する最大セル数(`--max-cells`)。
     pub max_cells: usize,
 }
@@ -84,6 +89,13 @@ pub fn convert(config: ConvertConfig) -> Result<(), ConvertError> {
     let target_sheets = if config.sheet_names.is_empty() {
         all_sheets
     } else {
+        // 指定されたシート名がブック内に存在しない場合、タイポ等に気付けるよう警告する
+        // (デフォルトのログレベルはWARNのため、--verbose指定なしでもユーザーに届く)。
+        for name in &config.sheet_names {
+            if !all_sheets.iter().any(|s| &s.name == name) {
+                log::warn!("Sheet '{name}' not found in the workbook");
+            }
+        }
         all_sheets
             .into_iter()
             .filter(|s| config.sheet_names.contains(&s.name))
@@ -114,10 +126,42 @@ pub fn convert(config: ConvertConfig) -> Result<(), ConvertError> {
         documents.push(doc);
     }
 
-    // 6. Renderer: Markdownへのレンダリング & 書き出し
+    // 6. --clean: 入力の妥当性確認(1〜5)がすべて成功した後、書き込み直前に実行する。
+    if config.clean {
+        if let renderer::OutputTarget::SplitDirectory(ref dir) = config.output_target {
+            clean_split_directory(dir);
+        }
+    }
+
+    // 7. Renderer: Markdownへのレンダリング & 書き出し
     renderer::render(&documents, config.output_target).map_err(ConvertError::Renderer)?;
 
     Ok(())
+}
+
+/// `--split`の出力先ディレクトリ直下にある拡張子`.md`のファイルのみを削除する
+/// (ディレクトリ全体の`remove_dir_all`は、誤って重要なフォルダを指定した場合の
+/// 全削除リスクを防ぐため行わない)。
+fn clean_split_directory(dir: &std::path::Path) {
+    if !dir.exists() || !dir.is_dir() {
+        return;
+    }
+    log::info!(
+        "Cleaning up markdown files in output directory: {}",
+        dir.display()
+    );
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("md") {
+                // 削除失敗（権限不足等）を握りつぶさず警告する。残骸ファイルが
+                // 気付かれないまま残ることを防ぐため。
+                if let Err(err) = std::fs::remove_file(&path) {
+                    log::warn!("Failed to remove stale file {}: {}", path.display(), err);
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -152,6 +196,7 @@ mod tests {
             strategy_id: "auto".to_string(),
             strategy_config: analysis::StrategyConfig::default(),
             output_target,
+            clean: false,
             max_cells: 1_000_000,
         }
     }
@@ -215,6 +260,86 @@ mod tests {
 
         let body = std::fs::read_to_string(&output).unwrap();
         assert!(!body.contains("Sheet1"));
+
+        let _ = std::fs::remove_file(&input);
+        let _ = std::fs::remove_file(&output);
+    }
+
+    fn temp_dir_path(name: &str) -> std::path::PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "extmd-lib-test-dir-{name}-{nanos}-{}",
+            std::process::id()
+        ))
+    }
+
+    #[test]
+    fn convert_clean_removes_stale_md_files_on_success() {
+        let input = temp_xlsx_path("clean-success");
+        write_minimal_workbook(&input, "hello");
+        let dir = temp_dir_path("clean-success");
+        std::fs::create_dir_all(&dir).unwrap();
+        let stale = dir.join("stale.md");
+        std::fs::write(&stale, "old content").unwrap();
+
+        let mut config = default_config(
+            input.clone(),
+            renderer::OutputTarget::SplitDirectory(dir.clone()),
+        );
+        config.clean = true;
+        convert(config).unwrap();
+
+        assert!(!stale.exists());
+        assert!(dir.join("Sheet1.md").exists());
+
+        let _ = std::fs::remove_file(&input);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// レビュー指摘の再発防止: `--clean`は`convert`が入力の妥当性確認をすべて成功させた
+    /// 後にのみ実行されるべきで、`InputFileNotFound`のような早期エラーの前に出力先を
+    /// クリーンアップしてはならない（既存の出力ファイルが変換失敗時に消失するため）。
+    #[test]
+    fn convert_clean_does_not_delete_existing_files_when_input_is_missing() {
+        let dir = temp_dir_path("clean-failure");
+        std::fs::create_dir_all(&dir).unwrap();
+        let existing = dir.join("existing.md");
+        std::fs::write(&existing, "must survive").unwrap();
+
+        let mut config = default_config(
+            PathBuf::from("/nonexistent/does-not-exist.xlsx"),
+            renderer::OutputTarget::SplitDirectory(dir.clone()),
+        );
+        config.clean = true;
+
+        let err = convert(config).unwrap_err();
+        assert!(matches!(err, ConvertError::InputFileNotFound(_)));
+        assert!(existing.exists());
+        assert_eq!(std::fs::read_to_string(&existing).unwrap(), "must survive");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn convert_warns_but_succeeds_when_requested_sheet_name_is_missing() {
+        let input = temp_xlsx_path("missing-sheet-warning");
+        write_minimal_workbook(&input, "hello");
+        let output = input.with_extension("md");
+
+        let mut config = default_config(
+            input.clone(),
+            renderer::OutputTarget::SingleFile(output.clone()),
+        );
+        config.sheet_names = vec!["Sheet1".to_string(), "Typo".to_string()];
+        // タイポしたシート名が含まれていても、実在するシートは変換され正常終了する
+        // （警告ログが出るだけでエラーにはしない）。
+        convert(config).unwrap();
+
+        let body = std::fs::read_to_string(&output).unwrap();
+        assert!(body.contains("hello"));
 
         let _ = std::fs::remove_file(&input);
         let _ = std::fs::remove_file(&output);

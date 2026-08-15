@@ -98,7 +98,7 @@ pub fn build_config(args: CliArgs) -> Result<ConvertConfig, String> {
 
     // C) OutputTarget の組み立て
     let output_target = if args.split {
-        build_split_target(&args.input, args.output, &timestamp_suffix, args.clean)?
+        build_split_target(&args.input, args.output, &timestamp_suffix)?
     } else {
         build_single_target(args.output, &timestamp_suffix, args.timestamp)
     };
@@ -109,15 +109,21 @@ pub fn build_config(args: CliArgs) -> Result<ConvertConfig, String> {
         strategy_id,
         strategy_config,
         output_target,
+        // `--clean`によるファイル削除は`build_config`(設定構築フェーズ)では実行しない。
+        // ここで実行すると、後続の`convert`が入力ファイル未検出等で失敗した場合でも
+        // 出力先の既存ファイルが消えてしまうため、`convert`側で入力の妥当性確認が
+        // すべて成功した後、書き込み直前に実行する（PR #23レビューコメントでの指摘を反映）。
+        clean: args.clean,
         max_cells: args.max_cells,
     })
 }
 
+/// `--split`指定時の出力先ディレクトリパスを組み立てる。既存ファイルの削除等の副作用は
+/// 一切持たない、純粋なマッピング処理に留める。
 fn build_split_target(
     input: &std::path::Path,
     output: Option<PathBuf>,
     timestamp_suffix: &Option<String>,
-    clean: bool,
 ) -> Result<OutputTarget, String> {
     let mut base_dir = match output {
         Some(out) => out,
@@ -136,25 +142,6 @@ fn build_split_target(
             .to_os_string();
         name.push(suffix);
         base_dir.set_file_name(name);
-    }
-
-    if clean && base_dir.exists() && base_dir.is_dir() {
-        log::info!(
-            "Cleaning up markdown files in output directory: {}",
-            base_dir.display()
-        );
-        if let Ok(entries) = std::fs::read_dir(&base_dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("md") {
-                    // 削除失敗（権限不足等）を握りつぶさず警告する。残骸ファイルが
-                    // 気付かれないまま残ることを防ぐため。
-                    if let Err(err) = std::fs::remove_file(&path) {
-                        log::warn!("Failed to remove stale file {}: {}", path.display(), err);
-                    }
-                }
-            }
-        }
     }
 
     Ok(OutputTarget::SplitDirectory(base_dir))

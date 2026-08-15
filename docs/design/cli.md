@@ -155,7 +155,8 @@ private moduleであり、`cli`層（`analysis`の外）からは到達できな
 - **タイムスタンプの適用**:
   - `timestamp` が `true` の場合、決定したベースディレクトリ名の末尾にタイムスタンプサフィックスを付与する (例: `output_20260815_203000/`)。
 - **クリーンアップ (`clean`)**:
-  - `--clean` が `true` の場合、出力先ディレクトリが決定した後に、**ディレクトリ直下の拡張子 `.md` を持つファイルのみ**をすべて削除する。ディレクトリ全体の削除 (`remove_dir_all`) は、ユーザーが誤って重要なフォルダ（例: `/` や `docs/`）を指定した場合の全削除リスクを防ぐため禁止し、対象拡張子のファイル削除に留める。
+  - `--clean` が `true` の場合、出力先ディレクトリの**ディレクトリ直下の拡張子 `.md` を持つファイルのみ**をすべて削除する。ディレクトリ全体の削除 (`remove_dir_all`) は、ユーザーが誤って重要なフォルダ（例: `/` や `docs/`）を指定した場合の全削除リスクを防ぐため禁止し、対象拡張子のファイル削除に留める。
+  - **実行タイミング**: 当初案では`cli::build_config`（`OutputTarget`組み立てと同じタイミング、`convert`呼び出しより前）でこの削除を実行していたが、これだと`convert`が入力ファイル未検出・サイズ上限超過・無効な戦略指定などで後から失敗した場合でも、出力先の既存ファイルが既に削除された後になってしまうという副作用があった（[PR #23レビューコメント](https://github.com/MinamiyamaKotaro/extmd/pull/23#pullrequestreview-4944072390)での指摘）。実装では`clean: bool`を`ConvertConfig`のフィールドとして持ち回し、`cli::build_config`は削除処理を一切行わない純粋なマッピングに留める。実際の削除は`lib::convert`が入力の妥当性確認・Reader・Analyzerの全ステップを成功させた後、`renderer::render`を呼ぶ直前（6.1節参照）に実行する。
 
 #### C) `split` が `false` の場合 (`OutputTarget::SingleFile` または `OutputTarget::Stdout`)
 
@@ -247,6 +248,10 @@ pub struct ConvertConfig {
     pub strategy_id: String,
     pub strategy_config: analysis::StrategyConfig,
     pub output_target: renderer::OutputTarget,
+    /// `--split`時、出力先ディレクトリ内の既存`.md`ファイルを書き込み前に削除するか
+    /// （`--clean`、3.2節B「クリーンアップ」参照）。`cli::build_config`では実行せず、
+    /// `convert`が入力の妥当性確認をすべて成功させた後、書き込み直前に実行する。
+    pub clean: bool,
     /// 1シートあたりに許容する最大セル数（`--max-cells`、[3.4節](#34-max_cells-のマッピングと入力ファイルサイズの上限)参照）。
     pub max_cells: usize,
 }
@@ -301,6 +306,13 @@ pub fn convert(config: ConvertConfig) -> Result<(), ConvertError> {
     let target_sheets = if config.sheet_names.is_empty() {
         all_sheets
     } else {
+        // 指定されたシート名がブック内に存在しない場合、タイポに気付けるよう警告する
+        // （デフォルトのログレベルはWARNのため--verbose指定なしでも届く）。
+        for name in &config.sheet_names {
+            if !all_sheets.iter().any(|s| &s.name == name) {
+                log::warn!("Sheet '{name}' not found in the workbook");
+            }
+        }
         all_sheets
             .into_iter()
             .filter(|s| config.sheet_names.contains(&s.name))
@@ -328,11 +340,37 @@ pub fn convert(config: ConvertConfig) -> Result<(), ConvertError> {
         documents.push(doc);
     }
 
-    // 6. Renderer: Markdownへのレンダリング & 書き出し
+    // 6. --clean: 入力の妥当性確認（1〜5）がすべて成功した後、書き込み直前に実行する
+    // （3.2節B「クリーンアップ」の実行タイミングに関する補足参照）。
+    if config.clean {
+        if let renderer::OutputTarget::SplitDirectory(ref dir) = config.output_target {
+            clean_split_directory(dir);
+        }
+    }
+
+    // 7. Renderer: Markdownへのレンダリング & 書き出し
     renderer::render(&documents, config.output_target)
         .map_err(ConvertError::Renderer)?;
 
     Ok(())
+}
+
+/// `--split`の出力先ディレクトリ直下にある拡張子`.md`のファイルのみを削除する。
+fn clean_split_directory(dir: &std::path::Path) {
+    if !dir.exists() || !dir.is_dir() {
+        return;
+    }
+    log::info!("Cleaning up markdown files in output directory: {}", dir.display());
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("md") {
+                if let Err(err) = std::fs::remove_file(&path) {
+                    log::warn!("Failed to remove stale file {}: {}", path.display(), err);
+                }
+            }
+        }
+    }
 }
 ```
 
@@ -347,10 +385,16 @@ use crate::renderer::OutputTarget;
 use std::path::PathBuf;
 
 /// CliArgs をパースし、ライブラリで利用可能な ConvertConfig に変換します。
+/// 副作用（ファイルシステムへの書き込み・削除）は一切持たない、純粋なマッピング処理と
+/// する（`--clean`のファイル削除タイミングに関する3.2節Bの補足を参照。当初案では
+/// この関数内で削除を実行していたが、`convert`呼び出し前に削除してしまうと、
+/// `convert`が後から失敗した場合に既存の出力ファイルが失われるため`lib::convert`側へ移した）。
 pub fn build_config(args: CliArgs) -> Result<ConvertConfig, String> {
     // A) StrategyConfig の組み立て
-    let mut strategy_config = StrategyConfig::default();
-    strategy_config.overflow_threshold = args.overflow_threshold;
+    let strategy_config = StrategyConfig {
+        overflow_threshold: args.overflow_threshold,
+        ..StrategyConfig::default()
+    };
 
     let strategy_id = if args.no_overflow_merge {
         "tabular".to_string()
@@ -366,43 +410,23 @@ pub fn build_config(args: CliArgs) -> Result<ConvertConfig, String> {
         None
     };
 
-    // C) OutputTarget の組み立て
+    // C) OutputTarget の組み立て（パスの決定のみ。ファイル削除は行わない）
     let output_target = if args.split {
-        // 分割出力モード
         let mut base_dir = match args.output {
             Some(out) => out,
             None => {
-                // 入力ファイルパスのベース名を取得
                 let stem = args.input.file_stem()
                     .ok_or_else(|| "Failed to get input file stem".to_string())?;
                 PathBuf::from(stem)
             }
         };
 
-        // タイムスタンプ付与
         if let Some(ref suffix) = timestamp_suffix {
             let mut name = base_dir.file_name()
                 .ok_or_else(|| "Failed to get base dir name".to_string())?
                 .to_os_string();
             name.push(suffix);
             base_dir.set_file_name(name);
-        }
-
-        // clean 指定があれば事前に .md ファイルをクリーンアップ
-        if args.clean && base_dir.exists() && base_dir.is_dir() {
-            log::info!("Cleaning up markdown files in output directory: {}", base_dir.display());
-            if let Ok(entries) = std::fs::read_dir(&base_dir) {
-                for entry in entries.flatten() {
-                    let path = entry.path();
-                    if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("md") {
-                        // 削除失敗（権限不足等）を握りつぶさず警告する。残骸ファイルが
-                        // 気付かれないまま残ることを防ぐため。
-                        if let Err(err) = std::fs::remove_file(&path) {
-                            log::warn!("Failed to remove stale file {}: {}", path.display(), err);
-                        }
-                    }
-                }
-            }
         }
 
         OutputTarget::SplitDirectory(base_dir)
@@ -434,6 +458,7 @@ pub fn build_config(args: CliArgs) -> Result<ConvertConfig, String> {
         strategy_id,
         strategy_config,
         output_target,
+        clean: args.clean,
         max_cells: args.max_cells,
     })
 }
