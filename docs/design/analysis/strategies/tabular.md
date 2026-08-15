@@ -49,8 +49,16 @@ impl AnalysisStrategy for TabularStrategy {
         OverflowDecision::NoMerge
     }
 
-    fn classify_row(&self, _row: &ResolvedRow) -> RowKind {
-        RowKind::TableRow
+    fn classify_row(&self, row: &ResolvedRow) -> RowKind {
+        // 全セルが空の行（blocksが空）は、TableRowにすると
+        // renderer::table::render_tableでcol_countが0になり内容のない退化した
+        // テーブル行（`| |`等）が出力されてしまうためFlowとする
+        // （GridPaperStrategy::classify_row、PR #21と同じ理由。Issue #33で判明）。
+        if row.blocks.is_empty() {
+            RowKind::Flow
+        } else {
+            RowKind::TableRow
+        }
     }
 
     fn heading_level(&self, _block: &Block) -> Option<u8> {

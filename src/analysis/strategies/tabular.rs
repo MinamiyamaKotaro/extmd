@@ -49,8 +49,16 @@ impl AnalysisStrategy for TabularStrategy {
         OverflowDecision::NoMerge
     }
 
-    fn classify_row(&self, _row: &domain::ResolvedRow) -> domain::RowKind {
-        domain::RowKind::TableRow
+    fn classify_row(&self, row: &domain::ResolvedRow) -> domain::RowKind {
+        // 全セルが空の行（blocksが空）をTableRowにすると、renderer::table::render_tableで
+        // col_countが0になり内容のない退化したテーブル行（`| |`等）が出力されてしまう。
+        // GridPaperStrategy::classify_row（PR #21）と同じ理由でFlowとして扱う
+        // （Issue #33レビューコメントでの指摘を反映）。
+        if row.blocks.is_empty() {
+            domain::RowKind::Flow
+        } else {
+            domain::RowKind::TableRow
+        }
     }
 
     fn heading_level(&self, _block: &domain::Block) -> Option<u8> {
@@ -94,11 +102,30 @@ mod tests {
     }
 
     #[test]
-    fn classify_row_always_table_row() {
+    fn classify_row_non_empty_blocks_is_table_row() {
         let s = TabularStrategy::new(Weights::default());
-        let blocks = vec![];
+        let blocks = vec![domain::Block {
+            row: 0,
+            col_start: 0,
+            col_end: 0,
+            text: "x".into(),
+            font: domain::FontInfo {
+                size_pt: 11.0,
+                bold: false,
+            },
+            source: domain::BlockSource::Single,
+            heading_level: None,
+        }];
         let row = domain::ResolvedRow { blocks: &blocks };
         assert_eq!(s.classify_row(&row), domain::RowKind::TableRow);
+    }
+
+    #[test]
+    fn classify_row_empty_blocks_is_flow() {
+        let s = TabularStrategy::new(Weights::default());
+        let blocks: Vec<domain::Block> = vec![];
+        let row = domain::ResolvedRow { blocks: &blocks };
+        assert_eq!(s.classify_row(&row), domain::RowKind::Flow);
     }
 
     #[test]

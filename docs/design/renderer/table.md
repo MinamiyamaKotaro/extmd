@@ -78,5 +78,10 @@ v1では、**連続する`TableRow`グループの先頭行を常にヘッダー
 - 先頭行を常にヘッダー行として扱う方針（4章）が実データにおいて許容範囲か。
   「本当はヘッダー行を持たない表」をどう見分けるかは、`AnalysisStrategy`側に
   ヘッダー行判定を持たせるかどうかを含め、将来の拡張として検討する
-- `col_count`が0になるケース（グループ内の全行が空の`blocks`を持つ）は理論上
-  `RowKind::TableRow`と分類される時点で発生しないはずだが、実装時にテストで確認する
+- ~~`col_count`が0になるケース（グループ内の全行が空の`blocks`を持つ）は理論上
+  `RowKind::TableRow`と分類される時点で発生しないはずだが、実装時にテストで確認する~~
+  → 実装時、`TabularStrategy::classify_row`（[strategies/tabular.md 2章](../analysis/strategies/tabular.md#2-トレイト実装)）が
+  空の`blocks`でも常に`TableRow`を返す実装になっており、この前提が成立しないことが判明した
+  （Issue #33）。`GridPaperStrategy::classify_row`（PR #21）と同じ理由で
+  `TabularStrategy::classify_row`も`blocks.is_empty()`の場合に`Flow`を返すよう修正し、
+  `TableRow`に分類される行は必ず1つ以上のブロックを持つという不変条件を回復した。
