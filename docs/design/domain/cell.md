@@ -35,6 +35,15 @@ impl CellValue {
 数式セルは reader層（`reader::xlsx`）で計算済みの値に解決してから `CellValue` に格納する。
 domainは数式そのものを表現しない（[要件定義書 4.2「対象外」](../../requirement/requirements.md#42-対象外v1では扱わない)と対応）。
 
+**`format_number`/`format_date` の宣言場所:** `cell.rs` 内に定義する非公開（モジュール外に
+公開しない）関数とする。`display_text` から見て実装詳細に過ぎず、`CellValue` の外から
+直接呼ぶ必要はないため。内部で4章の書式ロジック（`ssfmt`採用が決まればそれへの委譲、
+决まらなければ自前実装）を呼び出すラッパーとして働く。呼び出し元（domain外の
+reader/analysis/renderer層）から見えるのは `CellValue::display_text()` のみで、
+書式ライブラリの選定（[Issue #2](https://github.com/MinamiyamaKotaro/extmd/issues/2)）が
+どちらに転んでも `cell.rs` 内の実装だけを差し替えれば済む
+（[PR #3のレビューコメント](https://github.com/MinamiyamaKotaro/extmd/pull/3#issuecomment-5301554119)での指摘を反映）。
+
 **日付/日時ライブラリの決定: `chrono`。** Reader候補である`calamine`が公式に
 `chrono` フィーチャー（`chrono::NaiveDate`/`NaiveDateTime`/`NaiveTime` への変換ヘルパー）
 を提供しており、日付セルの変換をReader層でそのまま利用できるエコシステム親和性を

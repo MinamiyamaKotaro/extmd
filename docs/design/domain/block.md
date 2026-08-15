@@ -8,16 +8,23 @@
 pub enum BlockSource {
     /// 単独セル（はみ出し・結合いずれもなし）。
     Single,
-    /// はみ出し判定により、右方向に `merged_cols` 個の空セルを結合した。
-    OverflowMerge { merged_cols: usize },
+    /// はみ出し判定により、右方向の空セルを結合した。
+    OverflowMerge,
     /// Excelのネイティブ結合セルによるもの。
     NativeMerge,
 }
 ```
 
-`merged_cols` を持たせるのは、レンダラーが「結合by overflow」と「結合byネイティブ結合」を
-区別して出力を変えたい場合（例: デバッグ出力、`--no-overflow-merge` との差分表示）に
-備えるため。v1のMarkdown出力自体は `BlockSource` を分岐しない想定だが、型としては保持しておく。
+`OverflowMerge`/`NativeMerge` を分けているのは、レンダラーが「結合by overflow」と
+「結合byネイティブ結合」を区別して出力を変えたい場合（例: デバッグ出力、
+`--no-overflow-merge` との差分表示）に備えるため。v1のMarkdown出力自体は
+`BlockSource` を分岐しない想定だが、型としては保持しておく。
+
+**設計判断: 結合セル数はフィールドとして持たない。** 当初 `OverflowMerge { merged_cols: usize }`
+のように結合したセル数を持たせる案だったが、その値は常に `Block` 自身の
+`col_start`/`col_end` から `span() - 1` として一意に導出できるため、フィールドとして
+二重に保持すると値がずれる不整合リスクがある。結合セル数が必要な場面では
+`block.span() - 1` を呼ぶ（[PR #3のレビューコメント](https://github.com/MinamiyamaKotaro/extmd/pull/3#issuecomment-5301554119)での指摘を反映）。
 
 ## 2. `Block`
 

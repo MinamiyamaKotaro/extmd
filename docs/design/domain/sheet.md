@@ -13,10 +13,12 @@ pub struct MergeRange {
 }
 
 impl MergeRange {
-    /// 「1行×複数列」または「複数行×1列」の単純な矩形か。
+    /// 単一の行、または単一の列にまたがる結合（1×N または N×1）か。
     /// analysis層の merge_irregularity 算出で使う
     /// （[アーキテクチャ設計書 6.1.2](../architecture.md#612-各指標の算出方法)）。
-    pub fn is_simple_strip(&self) -> bool {
+    /// `is_simple_strip` から改名（「単純な矩形」では意図が伝わりにくいという
+    /// [PR #3のレビューコメント](https://github.com/MinamiyamaKotaro/extmd/pull/3#issuecomment-5301554119)を反映）。
+    pub fn is_single_row_or_column(&self) -> bool {
         self.row_start == self.row_end || self.col_start == self.col_end
     }
 }
