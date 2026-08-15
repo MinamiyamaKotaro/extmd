@@ -94,11 +94,6 @@ pub struct CliArgs {
     #[arg(long)]
     pub timestamp: bool,
 
-    /// シート見出しレベルに対する本文見出しのオフセットを明示的に指定します。
-    /// 未指定時のデフォルトは、連結出力時は 1 (H2始まり)、分割出力時は 0 (H1始まり) です。
-    #[arg(long, value_name = "OFFSET")]
-    pub heading_offset: Option<u8>,
-
     /// 詳細なログ（デバッグ情報など）を標準エラー出力へ表示します。
     #[arg(short, long)]
     pub verbose: bool,
@@ -148,14 +143,11 @@ pub struct CliArgs {
   - 標準出力へ書き出す。
   - `timestamp` が `true` の場合、標準出力は名前を持たないため警告ログを標準エラー出力に出力した上で、タイムスタンプ指定は無視する。
 
-### 3.3. `heading_offset` の決定
+### 3.3. `heading_offset` はCLI側で扱わない
 
-[renderer/mod.md 5章](renderer/mod.md#5-シート見出しレベルと本文見出しレベルの階層関係heading_offset) で規定されたデフォルト値を CLI 側でオーバーライド可能にする。
+[renderer/mod.md 5章](renderer/mod.md#5-シート見出しレベルと本文見出しレベルの階層関係heading_offset)の`heading_offset_for`が示す通り、シート見出しと本文見出しのオフセットは`renderer::render`が`OutputTarget`から自動算出する内部実装であり、`render(documents: &[domain::Document], target: OutputTarget) -> Result<(), RendererError>`のシグネチャにオフセットを外部注入する引数は存在しない。
 
-- 引数 `--heading-offset` が明示指定されている場合は、その値 (`u8`) をそのまま適用する。
-- 指定されていない場合、`heading_offset` を以下のように決定して渡す。
-  - `Stdout` または `SingleFile` (連結出力): `1` (シート名が H1 になるため、本文の見出しを +1 オフセットして H2 始まりにする)
-  - `SplitDirectory` (分割出力): `0` (ファイル名自身がシートタイトルになるため、本文の見出しはオフセットなしで H1 始まりにする)
+`cli.rs`はこの値を算出・上書きせず、`OutputTarget`を組み立てて渡すだけに徹する。CLI側での明示的なオフセット上書き（例: `--heading-offset`）は本設計のv1スコープには含めない（§7参照）。
 
 ---
 
@@ -210,7 +202,6 @@ pub struct ConvertConfig {
     pub strategy_id: String,
     pub strategy_config: analysis::registry::StrategyConfig,
     pub output_target: renderer::OutputTarget,
-    pub heading_offset: u8,
 }
 
 #[derive(Debug)]
@@ -271,8 +262,8 @@ pub fn convert(config: ConvertConfig) -> Result<(), ConvertError> {
 
         log::info!("Applied strategy '{}' to sheet '{}'", strategy.id(), sheet.name);
 
-        // 分析の実行
-        let doc = analysis::analyze(&sheet, strategy, config.heading_offset);
+        // 分析の実行（analysis/mod.md 3章の通り、heading_offsetはanalyzeの関心事ではない）
+        let doc = analysis::analyze(&sheet, strategy);
         documents.push(doc);
     }
 
@@ -343,7 +334,11 @@ pub fn build_config(args: CliArgs) -> Result<ConvertConfig, String> {
                 for entry in entries.flatten() {
                     let path = entry.path();
                     if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("md") {
-                        let _ = std::fs::remove_file(path);
+                        // 削除失敗（権限不足等）を握りつぶさず警告する。残骸ファイルが
+                        // 気付かれないまま残ることを防ぐため。
+                        if let Err(err) = std::fs::remove_file(&path) {
+                            log::warn!("Failed to remove stale file {}: {}", path.display(), err);
+                        }
                     }
                 }
             }
@@ -372,22 +367,12 @@ pub fn build_config(args: CliArgs) -> Result<ConvertConfig, String> {
         }
     };
 
-    // D) heading_offset の決定
-    let heading_offset = match args.heading_offset {
-        Some(offset) => offset,
-        None => match output_target {
-            OutputTarget::Stdout | OutputTarget::SingleFile(_) => 1,
-            OutputTarget::SplitDirectory(_) => 0,
-        },
-    };
-
     Ok(ConvertConfig {
         input_path: args.input,
         sheet_names: args.sheet,
         strategy_id,
         strategy_config,
         output_target,
-        heading_offset,
     })
 }
 ```
@@ -437,3 +422,4 @@ fn main() {
 
 - **タイムスタンプのタイムゾーン**: `chrono::Local::now()` を用いてローカル時刻で付与するが、コンテナ環境等で UTC となる可能性をドキュメント等で注意喚起する。
 - **エラー出力フォーマット**: 本設計では単純な `eprintln!("{}", err)` としているが、より詳細なスタックトレースやコンテキストが必要な場合は将来的に `anyhow` 等の導入を検討する。
+- **`heading_offset`のCLI明示指定**: `renderer::render`（[renderer/mod.md 4章](renderer/mod.md#4-公開api)）は`OutputTarget`から`heading_offset`を自動算出する内部実装であり、外部から上書きする引数を持たない。CLIから明示指定できるようにする場合は`render`のシグネチャ拡張が必要になるため、既存のrenderer詳細設計（Issue #8）の再検討を伴う。v1では需要が確認できていないためスコープ外とし、将来必要になった時点で別Issueとして起票する。
