@@ -11,48 +11,63 @@
 
 ## 2. `escape_table_cell`
 
+当初案は複数回の`.replace`呼び出しを順序依存で連鎖させる実装だったが、呼び出しのたびに
+中間`String`がヒープ確保される・置換順序を将来のコード修正で誤って壊しやすいという
+2つの課題が実装時のPRレビューで指摘され（[PR #22レビューコメント](https://github.com/MinamiyamaKotaro/extmd/pull/22#pullrequestreview-4944043192)）、
+1文字ずつの単一パス走査＋`match`式に変更した（3章の`escape_flow_text`と同じ方式に統一）。
+
 ```rust
-pub(crate) fn escape_table_cell(text: &str) -> String {
-    // 置換順序が重要（先に適用した置換が生成した文字を、後続の置換が誤って
-    // 再エスケープ/破壊しないようにするため）:
-    // 1. `&` → `&amp;`: `<`/`>`のエスケープより先に行わないと、
-    //    後続の置換で挿入した `&lt;`/`&gt;` 自身の `&` を二重エスケープしてしまう
-    // 2. `<`/`>` → `&lt;`/`&gt;`: HTMLタグとして解釈されるのを防ぐ（4章参照）
-    // 3. `\` → `\\`: バックスラッシュを最初にエスケープしないと、
-    //    後続の置換で挿入したバックスラッシュ自身を二重にエスケープしてしまう
-    // 4. `|` → `\|`
-    // 5. `\n` → `<br>`: 意図的に挿入するHTMLタグのため、必ず最後に置換する
-    //    （2.より前に行うと `<br>` 自身が `&lt;br&gt;` にエスケープされてしまう）
-    text.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('\\', "\\\\")
-        .replace('|', "\\|")
-        .replace('\n', "<br>")
+fn normalize_line_endings(text: &str) -> String {
+    text.replace("\r\n", "\n")
+}
+
+pub(in crate::renderer) fn escape_table_cell(text: &str) -> String {
+    let normalized = normalize_line_endings(text);
+    let mut escaped = String::with_capacity(normalized.len());
+    for c in normalized.chars() {
+        match c {
+            '&' => escaped.push_str("&amp;"),
+            '<' => escaped.push_str("&lt;"),
+            '>' => escaped.push_str("&gt;"),
+            '\\' => escaped.push_str("\\\\"),
+            '|' => escaped.push_str("\\|"),
+            '\n' => escaped.push_str("<br>"),
+            _ => escaped.push(c),
+        }
+    }
+    escaped
 }
 ```
 
 - **改行 → `<br>`**: テーブルセル内での生の改行は行の終端とみなされ表が崩れるため、
-  HTMLの`<br>`タグに置換する。
+  HTMLの`<br>`タグに置換する。変換前に`normalize_line_endings`でCRLF（`\r\n`）をLF（`\n`）に
+  正規化する。Windows環境や一部のライブラリで作成された`.xlsx`はセル内改行を`\r\n`で
+  格納している場合があり、これを考慮しないと変換後に`\r`が残留してしまう
+  （[PR #22レビューコメント](https://github.com/MinamiyamaKotaro/extmd/pull/22#pullrequestreview-4944043192)での指摘を反映）。
 - **パイプ（`|`） → `\|`**: テーブルの列境界と誤認識されるため、エスケープする。
 - **バックスラッシュ（`\`） → `\\`**: エスケープ文字自体として解釈されるのを防ぐ。
 - **`&` `<` `>` → HTMLエンティティ**: 4章参照。
 
+1文字ずつの単一パス走査のため、旧実装で必要だった置換順序（`&`を`<`/`>`より先に、
+`\`を`|`より先に、`\n`を最後に、という制約）は構造的に発生しない。
+
 ## 3. `escape_flow_text`
 
 ```rust
-pub(crate) fn escape_flow_text(text: &str) -> String {
-    let mut escaped = String::with_capacity(text.len());
-    for c in text.chars() {
-        // バックスラッシュを含む制御文字は `\` を前置してエスケープする。
-        // 順序上、バックスラッシュ自身のエスケープが常に他の文字より先に評価される
-        // （1文字ずつ処理するため2章のような置換順序の問題は起きない）。
-        if matches!(c, '\\' | '*' | '_' | '`' | '[' | ']' | '#' | '&' | '<' | '>') {
-            escaped.push('\\');
+pub(in crate::renderer) fn escape_flow_text(text: &str) -> String {
+    let normalized = normalize_line_endings(text);
+    let mut escaped = String::with_capacity(normalized.len());
+    for c in normalized.chars() {
+        match c {
+            '\\' | '*' | '_' | '`' | '[' | ']' | '#' | '&' | '<' | '>' => {
+                escaped.push('\\');
+                escaped.push(c);
+            }
+            '\n' => escaped.push_str("  \n"),
+            _ => escaped.push(c),
         }
-        escaped.push(c);
     }
-    escaped.replace('\n', "  \n")
+    escaped
 }
 ```
 
@@ -64,10 +79,8 @@ pub(crate) fn escape_flow_text(text: &str) -> String {
   エンティティ化されるため、`escape_table_cell`と同じ実体参照への置換ではなく
   既存の1文字ずつのバックスラッシュエスケープ方式に統一する。
 - **改行 → 行末スペース2つ＋改行（`"  \n"`）**: Markdownの明示的な改行記法に変換する
-  （生の改行1つだけでは同一段落として連結されてしまうため）。
-
-1文字ずつ走査する実装のため、`escape_table_cell`のような複数回の`replace`呼び出しによる
-置換順序の考慮は不要。
+  （生の改行1つだけでは同一段落として連結されてしまうため）。2章と同じ理由で
+  `normalize_line_endings`によるCRLF正規化を先に行う。
 
 ## 4. `&` `<` `>` をエスケープする理由（生HTML混入によるインジェクション対策）
 

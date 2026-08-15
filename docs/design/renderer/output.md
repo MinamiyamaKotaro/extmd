@@ -11,16 +11,16 @@
 ## 2. 書き込みAPI
 
 ```rust
-pub(crate) fn write_stdout(body: &str) -> Result<(), RendererError> {
+pub(in crate::renderer) fn write_stdout(body: &str) -> Result<(), RendererError> {
     use std::io::Write;
     write!(std::io::stdout(), "{body}").map_err(RendererError::Io)
 }
 
-pub(crate) fn write_single_file(path: &std::path::Path, body: &str) -> Result<(), RendererError> {
+pub(in crate::renderer) fn write_single_file(path: &std::path::Path, body: &str) -> Result<(), RendererError> {
     std::fs::write(path, body).map_err(RendererError::Io) // 5章: 同名なら上書き
 }
 
-pub(crate) fn write_split(
+pub(in crate::renderer) fn write_split(
     dir: &std::path::Path,
     sheets: Vec<(String, String)>, // (sheet_name, body)
 ) -> Result<(), RendererError> {

@@ -10,7 +10,7 @@
 ## 2. 変換アルゴリズム
 
 ```rust
-pub(crate) fn render_table(rows: &[domain::RenderedRow]) -> String {
+pub(in crate::renderer) fn render_table(rows: &[domain::RenderedRow]) -> String {
     let col_count = rows
         .iter()
         .flat_map(|row| row.blocks.iter())
