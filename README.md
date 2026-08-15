@@ -98,9 +98,13 @@ extmd/
 │       ├── table.rs               # RowKind::TableRow行のMarkdownパイプテーブル変換
 │       ├── escape.rs              # Markdown特殊文字のエスケープ
 │       └── output.rs              # OutputTargetに基づく書き込み・ファイル名サニタイズ
+├── examples/
+│   └── gen_fixtures.rs          # tests/fixtures/*.xlsxを生成するスクリプト（cargo run --example gen_fixtures）
 ├── tests/
 │   ├── reader.rs                # readerの結合テスト（umya-spreadsheetの実writer/readerを介した往復検証）
-│   └── cli.rs                   # CLI全体の結合テスト（コンパイル済みバイナリを実際に起動して検証）
+│   ├── analysis.rs              # tests/fixtures/の実xlsxからselect_autoの戦略選択・ネイティブ結合解決を検証
+│   ├── cli.rs                   # CLI全体の結合テスト（コンパイル済みバイナリを実際に起動して検証）
+│   └── fixtures/                # 方眼紙/通常表/申請書/議事録/混在ワークブックのサンプルxlsx（tests/analysis.rsが使用）
 └── docs/
     ├── requirement/
     ├── design/

@@ -119,9 +119,7 @@ mod tests {
         assert!(registry.get("unknown").is_none());
     }
 
-    #[test]
-    fn select_auto_picks_tabular_for_dense_regular_sheet() {
-        let registry = StrategyRegistry::with_defaults();
+    fn dense_regular_sheet() -> domain::Sheet {
         let cells = vec![
             text_cell("a", 8.0),
             text_cell("b", 8.0),
@@ -130,13 +128,70 @@ mod tests {
             text_cell("e", 8.0),
             text_cell("f", 8.0),
         ];
-        let sheet = domain::Sheet {
+        domain::Sheet {
             name: "s".into(),
             cells: domain::Grid::new(3, 2, cells),
             merges: vec![],
-        };
-        let selected = registry.select_auto(&sheet);
+        }
+    }
+
+    #[test]
+    fn select_auto_picks_tabular_for_dense_regular_sheet() {
+        let registry = StrategyRegistry::with_defaults();
+        let selected = registry.select_auto(&dense_regular_sheet());
         assert_eq!(selected.id(), "tabular");
+    }
+
+    /// `affinity_fallback_margin`の判定（`scored[0].1 - scored[1].1 < self.fallback_margin`）
+    /// の`<`境界そのものを、実データのfixtureに頼らず決定的に検証する。`dense_regular_sheet`は
+    /// 常にtabularがgrid-paperを上回るため、両者のaffinity差`diff`を実際に計算し、
+    /// `affinity_fallback_margin`をその境界値ちょうど・直上・直下に設定して3点で確認する
+    /// （境界値分析）。
+    fn tabular_grid_paper_affinity_diff() -> f32 {
+        let sheet = dense_regular_sheet();
+        let metrics = metrics::compute_sheet_metrics(&sheet);
+        let grid_paper = GridPaperStrategy::new(1.0, strategies::grid_paper::Weights::default());
+        let tabular = TabularStrategy::new(strategies::tabular::Weights::default());
+        let diff = tabular.affinity(&sheet, &metrics) - grid_paper.affinity(&sheet, &metrics);
+        assert!(
+            diff > 0.0,
+            "tabular must score higher on this sheet for the boundary tests below to be meaningful"
+        );
+        diff
+    }
+
+    #[test]
+    fn select_auto_does_not_fall_back_when_margin_equals_the_affinity_diff_exactly() {
+        // `<`（`<=`ではない）ため、margin == diffちょうどはフォールバックの対象外。
+        let diff = tabular_grid_paper_affinity_diff();
+        let registry = StrategyRegistry::with_config(StrategyConfig {
+            affinity_fallback_margin: diff,
+            ..StrategyConfig::default()
+        });
+        assert_eq!(registry.select_auto(&dense_regular_sheet()).id(), "tabular");
+    }
+
+    #[test]
+    fn select_auto_falls_back_when_margin_is_just_above_the_affinity_diff() {
+        let diff = tabular_grid_paper_affinity_diff();
+        let registry = StrategyRegistry::with_config(StrategyConfig {
+            affinity_fallback_margin: diff + 0.001,
+            ..StrategyConfig::default()
+        });
+        assert_eq!(
+            registry.select_auto(&dense_regular_sheet()).id(),
+            "grid-paper"
+        );
+    }
+
+    #[test]
+    fn select_auto_does_not_fall_back_when_margin_is_just_below_the_affinity_diff() {
+        let diff = tabular_grid_paper_affinity_diff();
+        let registry = StrategyRegistry::with_config(StrategyConfig {
+            affinity_fallback_margin: diff - 0.001,
+            ..StrategyConfig::default()
+        });
+        assert_eq!(registry.select_auto(&dense_regular_sheet()).id(), "tabular");
     }
 
     #[test]

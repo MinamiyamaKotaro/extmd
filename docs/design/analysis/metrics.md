@@ -100,11 +100,32 @@ privateのままにすると、戦略実装から`SheetMetrics`の値を読め�
 
 ## 5. テスト方針
 
-- `tests/fixtures/`に方眼紙レイアウト・通常表レイアウトのサンプルxlsxを追加し、`select_auto`
-  経由で意図した戦略が選ばれることをアサートするスナップショットテストを整備する
-  （[Issue #6での提案](https://github.com/MinamiyamaKotaro/extmd/issues/6#issuecomment-5301777202)）。
+- `tests/fixtures/`に方眼紙レイアウト・通常表レイアウトの実際の`.xlsx`サンプルを追加し、
+  `select_auto`経由で意図した戦略が選ばれることをアサートする結合テスト
+  （`tests/analysis.rs`）を整備した（[Issue #6での提案](https://github.com/MinamiyamaKotaro/extmd/issues/6#issuecomment-5301777202)）。
   4章の可視性制限により`SheetMetrics`を`analysis`外から直接構築できないため、
   テストは常に`select_auto`（`analysis`の公開APIの一部）経由で行う。
+  - フィクスチャは`examples/gen_fixtures.rs`（`cargo run --example gen_fixtures`）で
+    `umya_spreadsheet`のwriter APIを使って生成し、結果の`.xlsx`を`tests/fixtures/`に
+    コミットする。フィクスチャの内容を変えたい場合は生成スクリプトを編集し再生成する。
+  - `grid_paper.xlsx`（狭い均一列幅・はみ出しテキスト・不規則な行パターン）と
+    `tabular.xlsx`（広い均一列幅・隙間なく埋まった規則的な行パターン）に加え、
+    `application_form.xlsx`（ネイティブ結合セルを持つ申請書レイアウト）を用意した。
+    後者は実際に計算するとtabular側のaffinityがgrid-paperをわずかに上回るが、その差が
+    `affinity_fallback_margin`（既定`0.05`）未満のため僅差フォールバックでgrid-paperが
+    選ばれる、現実的な境界事例になっている（6章の「境界的なサンプル」要求を実データに
+    近い形で満たす）。
+  - `meeting_minutes.xlsx`（議事録レイアウト）は、ラベル+入力欄の1行結合に加えて
+    行・列の両方にまたがる結合セル（`MergeRange::is_single_row_or_column()`が`false`
+    になる、予定表内の2コマ分の枠を表す結合）を持つ。方眼紙文書の中に表形式の結合が
+    埋め込まれたパターンでもgrid-paperが選ばれること、および`analysis::analyze`が
+    縦方向の結合（rowspan相当、[table.md 3章](../renderer/table.md#3-結合セルcol_startcol_endの表現)が
+    v1スコープ外と明記する制約）を結合範囲の2行目以降で空白として正しく扱うことを
+    `tests/analysis.rs`で確認している。
+  - `mixed_workbook.xlsx`は1ワークブックに方眼紙シートと通常表シートを同居させ、
+    [architecture.md 6章](../architecture.md#6-戦略の選択strategyregistry)が要件とする
+    「1ファイル内に方眼紙シートと通常表シートが混在するケース」（要件定義書8章 #2）が
+    シートごとに正しく判定されることを確認する。
 - 各指標の重み・しきい値のチューニングは[registry.md 1章](registry.md#1-strategyconfig)の
   `StrategyConfig`経由で行い、`metrics.rs`自体のコード変更を伴わない。
 
