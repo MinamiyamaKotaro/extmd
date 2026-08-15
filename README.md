@@ -88,10 +88,7 @@ extmd/
 |---|---|
 | `domain/` | アーキテクチャ設計書 3. コアドメイン型 / [ドメイン設計書](docs/design/domain/mod.md)全体（`src/domain/`の各ファイルに`docs/design/domain/`の各mdファイルが対応） |
 | `reader/` | アーキテクチャ設計書 2. パイプライン全体像 `[1] Reader` / [Reader設計書](docs/design/reader/mod.md)全体（`src/reader/`の各ファイルに`docs/design/reader/`の各mdファイルが対応） |
-| `analysis/strategy.rs` | 4. `AnalysisStrategy` トレイト |
-| `analysis/strategies/` | 5. 具体的な戦略実装 |
-| `analysis/registry.rs` | 6. 戦略の選択（`StrategySelector`） |
-| `analysis/metrics.rs`, `heuristics.rs` | 6.1 `affinity` のスコアリング設計 |
+| `analysis/` | アーキテクチャ設計書 2. パイプライン全体像 `[2]+[3]` StrategySelector/Analyzer / [Analysis設計書](docs/design/analysis/mod.md)全体（`src/analysis/`の各ファイルに`docs/design/analysis/`の各mdファイルが対応） |
 
 新しいドメイン戦略を追加する際は `analysis/strategies/` に1ファイル追加するだけで、
 既存モジュールへの変更が不要になることを意図した構成です（設計書7章）。

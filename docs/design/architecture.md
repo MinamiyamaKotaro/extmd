@@ -69,19 +69,6 @@ pub struct Cell {
     pub number_format: Option<String>, // 表示形式コード
 }
 
-/// はみ出し判定の対象となる1セルとその右方向の空セル列。
-pub struct OverflowContext<'a> {
-    pub source: &'a Cell,
-    pub following_empty_cells: &'a [Cell], // 右隣から連続する空セル
-}
-
-pub enum OverflowDecision {
-    /// はみ出しなし。単独セルとして扱う。
-    NoMerge,
-    /// 右方向に `count` 個の空セルまで結合する。
-    MergeCells { count: usize },
-}
-
 /// 結合・整形済みの論理ブロック（Analyzerの出力単位）。
 pub struct Block {
     pub row: usize,
@@ -90,6 +77,7 @@ pub struct Block {
     pub text: String,
     pub font: FontInfo,
     pub source: BlockSource, // Overflow結合 / ネイティブ結合 / 単独セル
+    pub heading_level: Option<u8>, // AnalysisStrategy::heading_level の結果
 }
 
 /// はみ出し解決後、1行分のブロック列（classify_rowの入力）。
@@ -119,6 +107,11 @@ pub struct RenderedRow {
 `Sheet` は `SheetMetrics` 等の派生データを一切キャッシュしない、完全なイミュータブル
 データ構造とする（旧版では `OnceCell<SheetMetrics>` を持たせていたが、
 ドメイン設計書5章の理由により撤回した）。
+
+`detect_overflow` の入出力型 `OverflowContext`/`OverflowDecision` は、当初ここに
+domain型として掲載していたが、`AnalysisStrategy::detect_overflow` のためだけに
+存在する型であるため [analysis設計書 strategy.md](analysis/strategy.md#1-overflowcontext--overflowdecision-の配置場所についての設計判断)
+の通り `analysis::strategy` へ配置先を変更した。
 
 ## 4. `AnalysisStrategy` トレイト
 
@@ -227,7 +220,17 @@ pub struct ApplicationFormStrategy(GridPaperStrategy);
 のように `GridPaperStrategy` を委譲先として持ち、`affinity` と一部メソッドだけ
 上書きする実装も可とする。
 
+**v1スコープには含めない。** 要件定義書4.1（v1スコープ）にドメイン特化戦略への
+言及はなく、本節も「将来拡張」と明記していることから、v1は5.1/5.2の
+`grid-paper`/`tabular` の2戦略のみで構成する
+（[Issue #6での決定](https://github.com/MinamiyamaKotaro/extmd/issues/6#issuecomment-5301777202)、
+詳細は[analysis/strategies/mod.md 2章](analysis/strategies/mod.md#2-v1スコープ-grid-paper--tabular-の2戦略のみ)）。
+
 ## 6. 戦略の選択（`StrategySelector`）
+
+以下は概要のみを示す。`StrategyConfig`によるパラメータ外部注入、`SheetMetrics`の
+可視性設計、僅差フォールバックの実装等の詳細は[analysis設計書](analysis/mod.md)
+（[registry.md](analysis/registry.md)・[metrics.md](analysis/metrics.md)）を参照。
 
 ```rust
 pub struct StrategyRegistry {
@@ -390,15 +393,30 @@ impl AnalysisStrategy for TabularStrategy {
 
 1. `AnalysisStrategy` を実装する struct を追加する（既存戦略への変更は不要）
 2. `affinity` に、そのドメインらしいシートを識別するスコアリングを実装する
-3. `StrategyRegistry::with_defaults()`（または設定ファイル経由のプラグイン登録）に追加する
+3. `StrategyRegistry::with_config()`（[analysis/registry.md](analysis/registry.md)）の
+   戦略一覧に追加する
 4. 対象ドメインのサンプルファイルでスナップショットテストを追加する
 
 ## 8. 未確定事項（要件定義書 8章との対応）
 
-- `affinity` のスコアリング方式は6.1節で設計済み。ただし各指標の重み・
-  `overflow_candidate_rate` の既定しきい値・6.1.4のフォールバック閾値は
-  実データでの検証が必要（要件定義書 #1 と関連）
-- 業務ドメイン特化戦略（5.3）をv1スコープに含めるか、`grid-paper`/`tabular` の
-  2戦略のみでv1をリリースするかは未確定
-- 戦略ごとのパラメータ（`overflow_threshold` 等）をCLI引数で上書き可能にするか、
-  設定ファイル（TOML等）を導入するかは未確定
+[Issue #6](https://github.com/MinamiyamaKotaro/extmd/issues/6)での検討により、以下の3点は
+[analysis設計書](analysis/mod.md)側で確定した。詳細は各リンク先を参照。
+
+- `affinity` のスコアリング方式（各指標の重み・`overflow_candidate_rate` の既定
+  しきい値・6.1.4のフォールバック閾値）は、コード内にハードコードせず
+  `StrategyConfig`（[analysis/registry.md 1章](analysis/registry.md#1-strategyconfig)）
+  を介して外部注入する設計とした。具体的な数値は引き続き実データでの検証が必要
+  （要件定義書 #1 と関連）。
+- 業務ドメイン特化戦略（5.3）はv1スコープに含めず、`grid-paper`/`tabular` の2戦略のみで
+  v1をリリースする（[analysis/strategies/mod.md 2章](analysis/strategies/mod.md#2-v1スコープ-grid-paper--tabular-の2戦略のみ)）。
+- 戦略ごとのパラメータはv1ではCLI引数（`--overflow-threshold`等）による上書きのみを
+  サポートし、設定ファイル（TOML等）は将来拡張とする
+  （[analysis/registry.md 5章](analysis/registry.md#5-cliとの境界)）。
+
+以下は本設計（analysisの詳細設計）を経てなお残る未確定事項:
+
+- `compute_sheet_metrics`（[analysis/metrics.md](analysis/metrics.md)）が
+  `StrategyRegistry::select_auto` からのみ呼ばれる契約は、`pub(in crate::analysis)`に
+  よる可視性制限とdocstringで明文化する
+  （[analysis/metrics.md 4章](analysis/metrics.md#4-可視性の設計-pub--pubin-crateanalysis)、
+  [Issue #6でのレビュー議論](https://github.com/MinamiyamaKotaro/extmd/issues/6#issuecomment-5301796041)を反映）
