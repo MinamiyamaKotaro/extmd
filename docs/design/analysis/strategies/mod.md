@@ -8,8 +8,8 @@
 サブモジュールの`pub use`による再エクスポートのみを行う。
 
 ```rust
-mod grid_paper;
-mod tabular;
+pub(in crate::analysis) mod grid_paper;
+pub(in crate::analysis) mod tabular;
 
 pub use grid_paper::GridPaperStrategy;
 pub use tabular::TabularStrategy;
@@ -19,6 +19,15 @@ pub use tabular::TabularStrategy;
 `registry::StrategyConfig`（[registry.md 1章](../registry.md#1-strategyconfig)）から
 参照される必要があるため、`mod.rs`では再エクスポートせず、`strategies::grid_paper::Weights`/
 `strategies::tabular::Weights`とフルパスで参照する。
+
+サブモジュール宣言自体は単純な`mod grid_paper;`（無指定 = private）ではなく
+`pub(in crate::analysis)`とする必要がある。Rustのモジュール可視性は「無指定なら定義
+モジュールとその子孫のみ」に限られ、`registry.rs`は`strategies`モジュールの子孫ではなく
+兄弟（いずれも`analysis`直下）であるため、`mod grid_paper;`のままでは`registry.rs`から
+`strategies::grid_paper::Weights`という経路を解決できずコンパイルエラーになる。
+`pub(in crate::analysis)`にすることで、`analysis`モジュール内であれば`strategies`の
+子孫でなくても参照でき、かつ`analysis`外部（`renderer`/`main.rs`/`lib.rs`）には引き続き
+公開されない（実装時の技術的制約により確定。設計時点のコード例からの変更）。
 
 ## 2. v1スコープ: `grid-paper` / `tabular` の2戦略のみ
 
