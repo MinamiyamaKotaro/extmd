@@ -1,8 +1,6 @@
 //! シートの構造的特徴量。`registry::StrategyRegistry::select_auto`が1シートにつき1回だけ
 //! 計算し、登録された全戦略の`affinity`に配る（docs/design/analysis/metrics.md）。
 
-use std::collections::HashSet;
-
 use crate::domain;
 
 use super::heuristics;
@@ -119,8 +117,13 @@ fn fill_density(sheet: &domain::Sheet, non_empty_count: usize) -> f32 {
 
 /// 各行の「非空セルが存在する列インデックスの集合」について、隣接する行同士の
 /// Jaccard類似度の平均を取る。両方とも非空セルを持たない行同士のペアは対象から除く。
+///
+/// 各行の列インデックスは`row.iter().enumerate()`により昇順で収集されるため、
+/// `HashSet`ではなくソート済み`Vec`のマージ走査で積集合・和集合のサイズを
+/// `O(N1 + N2)`で計算し、ハッシュ化とヒープ確保のオーバーヘッドを避ける
+/// （PR #21レビューコメントでの指摘を反映）。
 fn row_structural_regularity(sheet: &domain::Sheet) -> f32 {
-    let non_empty_cols: Vec<HashSet<usize>> = sheet
+    let non_empty_cols: Vec<Vec<usize>> = sheet
         .cells
         .iter_rows()
         .map(|row| {
@@ -135,11 +138,12 @@ fn row_structural_regularity(sheet: &domain::Sheet) -> f32 {
     let mut jaccard_sum = 0.0f32;
     let mut pair_count = 0usize;
     for pair in non_empty_cols.windows(2) {
-        let union = pair[0].union(&pair[1]).count();
+        let (a, b) = (&pair[0], &pair[1]);
+        let intersection = count_sorted_intersection(a, b);
+        let union = a.len() + b.len() - intersection;
         if union == 0 {
             continue;
         }
-        let intersection = pair[0].intersection(&pair[1]).count();
         jaccard_sum += intersection as f32 / union as f32;
         pair_count += 1;
     }
@@ -149,6 +153,24 @@ fn row_structural_regularity(sheet: &domain::Sheet) -> f32 {
     } else {
         jaccard_sum / pair_count as f32
     }
+}
+
+/// 昇順ソート済みの2つのスライスの積集合の要素数を、マージ走査で計算する。
+fn count_sorted_intersection(a: &[usize], b: &[usize]) -> usize {
+    let (mut i, mut j) = (0, 0);
+    let mut count = 0;
+    while i < a.len() && j < b.len() {
+        match a[i].cmp(&b[j]) {
+            std::cmp::Ordering::Equal => {
+                count += 1;
+                i += 1;
+                j += 1;
+            }
+            std::cmp::Ordering::Less => i += 1,
+            std::cmp::Ordering::Greater => j += 1,
+        }
+    }
+    count
 }
 
 /// ネイティブ結合セルのうち、単純な「1行×複数列」または「複数行×1列」の矩形以外の

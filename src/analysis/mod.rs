@@ -79,7 +79,11 @@ fn resolve_blocks(
         let (source, col_end) = match strategy.detect_overflow(&ctx) {
             OverflowDecision::NoMerge => (domain::BlockSource::Single, col),
             OverflowDecision::MergeCells { count } => {
-                (domain::BlockSource::OverflowMerge, col + count)
+                // `AnalysisStrategy`の実装は`following.len()`を超える`count`を返さない契約だが、
+                // 将来のカスタム戦略やバグによる契約違反で行の境界を超えないよう、ここで
+                // クランプして防御する（PR #21レビューコメントでの指摘を反映）。
+                let clamped_count = count.min(following.len());
+                (domain::BlockSource::OverflowMerge, col + clamped_count)
             }
         };
         blocks.push(build_block(
@@ -173,6 +177,44 @@ mod tests {
 
     fn text(s: &str, column_width: f64) -> domain::Cell {
         cell(domain::CellValue::String(s.into()), column_width, false)
+    }
+
+    /// `AnalysisStrategy`実装が契約(`count <= following.len()`)に反して行の境界を超える
+    /// `count`を返しても`resolve_blocks`側でクランプされることを確かめるためのテスト専用戦略。
+    struct AlwaysOverflowStrategy;
+
+    impl AnalysisStrategy for AlwaysOverflowStrategy {
+        fn id(&self) -> &'static str {
+            "fake-overflow"
+        }
+
+        fn affinity(&self, _sheet: &domain::Sheet, _metrics: &SheetMetrics) -> f32 {
+            0.0
+        }
+
+        fn detect_overflow(&self, _ctx: &OverflowContext) -> OverflowDecision {
+            OverflowDecision::MergeCells { count: 9999 }
+        }
+
+        fn classify_row(&self, _row: &domain::ResolvedRow) -> domain::RowKind {
+            domain::RowKind::TableRow
+        }
+
+        fn heading_level(&self, _block: &domain::Block) -> Option<u8> {
+            None
+        }
+    }
+
+    #[test]
+    fn resolve_blocks_clamps_overflow_count_to_available_columns() {
+        let sheet = domain::Sheet {
+            name: "s".into(),
+            cells: domain::Grid::new(1, 3, vec![text("a", 4.0), empty(4.0), empty(4.0)]),
+            merges: vec![],
+        };
+        let blocks = resolve_blocks(&sheet, 0, &AlwaysOverflowStrategy);
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].col_end, 2);
     }
 
     #[test]

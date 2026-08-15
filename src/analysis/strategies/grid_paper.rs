@@ -82,8 +82,10 @@ impl AnalysisStrategy for GridPaperStrategy {
     fn classify_row(&self, row: &domain::ResolvedRow) -> domain::RowKind {
         // 要件定義書5.3.4: 1行が単一の大きなテキストブロックで構成される場合はFlow。
         // これがないと、はみ出し・結合の有無によらない単独セルの短い見出し・段落を
-        // 誤ってテーブル扱いしてしまう。
-        if row.blocks.len() == 1 {
+        // 誤ってテーブル扱いしてしまう。ブロックが1つもない(全セルが空)行も同様にFlowとする。
+        // 空行を空のテーブル行("| | |")として出力してしまうのを防ぐ
+        // （PR #21レビューコメントでの指摘を反映）。
+        if row.blocks.len() <= 1 {
             return domain::RowKind::Flow;
         }
 
@@ -199,6 +201,14 @@ mod tests {
     fn classify_row_single_block_is_flow() {
         let s = GridPaperStrategy::new(1.0, Weights::default());
         let blocks = vec![block(0, 0)];
+        let row = domain::ResolvedRow { blocks: &blocks };
+        assert_eq!(s.classify_row(&row), domain::RowKind::Flow);
+    }
+
+    #[test]
+    fn classify_row_empty_row_is_flow() {
+        let s = GridPaperStrategy::new(1.0, Weights::default());
+        let blocks: Vec<domain::Block> = vec![];
         let row = domain::ResolvedRow { blocks: &blocks };
         assert_eq!(s.classify_row(&row), domain::RowKind::Flow);
     }
