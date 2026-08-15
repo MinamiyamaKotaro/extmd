@@ -26,6 +26,7 @@ extmdは、セルからはみ出して表示されている文字列を検出し
 - [Reader設計書](docs/design/reader/mod.md)
 - [Analysis設計書](docs/design/analysis/mod.md)
 - [Renderer設計書](docs/design/renderer/mod.md)
+- [CLI設計書](docs/design/cli.md)
 
 ## 使い方（予定）
 
@@ -46,9 +47,9 @@ CLI（`main.rs`）はライブラリ（`lib.rs`）を薄く呼び出すだけに
 extmd/
 ├── Cargo.toml
 ├── src/
-│   ├── main.rs              # バイナリエントリポイント。cli.rsをパースしてlib.rsを呼ぶだけ
-│   ├── lib.rs                # 公開API（convert()等）。テストや他クレートからの利用を想定
-│   ├── cli.rs                 # clapによるCLI引数定義（--strategy, --sheet, -o など）
+│   ├── main.rs              # バイナリエントリポイント。cli::build_config()を呼び、extmd::convert()を実行するだけ
+│   ├── lib.rs                # 公開API（convert()、ConvertConfig、ConvertError等）。cliモジュールを含む
+│   ├── cli.rs                 # clapによるCLI引数定義（--strategy, --sheet, -o, --split, --clean等）とConvertConfigへの変換（docs/design/cli.md参照）
 │   ├── domain/                # コアドメイン型。他のどの層にも依存しない最下層（docs/design/domain/参照）
 │   │   ├── mod.rs
 │   │   ├── cell.rs               # CellValue, Alignment, FontInfo, Cell
