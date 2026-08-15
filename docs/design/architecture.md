@@ -48,10 +48,12 @@ Strategyパターンが担うのは [3] Analyzer の中核ロジックであり�
 
 ## 3. コアドメイン型
 
-Strategyトレイトのシグネチャで使う入出力型を先に定義する。
+Strategyトレイトのシグネチャで使う入出力型の概要のみ示す。詳細な設計判断
+（`Grid`の内部表現、座標をnewtypeにしなかった理由、`Sheet`の不変性など）は
+[ドメイン設計書](domain/mod.md)を参照。
 
 ```rust
-/// Reader が生成する、1シート分の生データ。
+/// Reader が生成する、1シート分の生データ。イミュータブル。
 pub struct Sheet {
     pub name: String,
     pub cells: Grid<Cell>,        // 行×列の2次元グリッド
@@ -89,7 +91,7 @@ pub struct Block {
     pub source: BlockSource, // Overflow結合 / ネイティブ結合 / 単独セル
 }
 
-/// はみ出し解決後、1行分のブロック列。
+/// はみ出し解決後、1行分のブロック列（classify_rowの入力）。
 pub struct ResolvedRow<'a> {
     pub blocks: &'a [Block],
 }
@@ -100,7 +102,22 @@ pub enum RowKind {
     /// Markdownテーブルの1行として出力する。
     TableRow,
 }
+
+/// Analyzerの最終出力（classify_row適用後）。Rendererへの入力。
+pub struct Document {
+    pub sheet_name: String,
+    pub rows: Vec<RenderedRow>,
+}
+
+pub struct RenderedRow {
+    pub kind: RowKind,
+    pub blocks: Vec<Block>,
+}
 ```
+
+`Sheet` は `SheetMetrics` 等の派生データを一切キャッシュしない、完全なイミュータブル
+データ構造とする（旧版では `OnceCell<SheetMetrics>` を持たせていたが、
+ドメイン設計書5章の理由により撤回した）。
 
 ## 4. `AnalysisStrategy` トレイト
 
@@ -111,8 +128,9 @@ pub trait AnalysisStrategy {
     fn id(&self) -> &'static str;
 
     /// このシートに対して自身がどの程度適合しそうかを返す（0.0〜1.0）。
-    /// StrategySelector の自動判定で使用する。
-    fn affinity(&self, sheet: &Sheet) -> f32;
+    /// StrategySelector の自動判定で使用する。`metrics` は select_auto が
+    /// 一度だけ計算して全戦略に配る（6.1.1参照。Sheet自体はキャッシュを持たない）。
+    fn affinity(&self, sheet: &Sheet, metrics: &SheetMetrics) -> f32;
 
     /// はみ出し判定: 対象セルを右方向の空セルへどこまで結合するか決定する。
     fn detect_overflow(&self, ctx: &OverflowContext) -> OverflowDecision;
@@ -146,10 +164,9 @@ pub struct GridPaperStrategy {
 impl AnalysisStrategy for GridPaperStrategy {
     fn id(&self) -> &'static str { "grid-paper" }
 
-    fn affinity(&self, sheet: &Sheet) -> f32 {
-        // 例: 平均列幅が小さく、行数に対して結合セル/空セル比率が高いシートほど
-        // 方眼紙らしいと判定してスコアを上げる。
-        estimate_grid_paper_score(sheet)
+    fn affinity(&self, _sheet: &Sheet, metrics: &SheetMetrics) -> f32 {
+        // 6.1.3節の実装例を参照。metricsの各指標を重み付けして返す。
+        estimate_grid_paper_score(metrics)
     }
 
     fn detect_overflow(&self, ctx: &OverflowContext) -> OverflowDecision {
@@ -178,8 +195,8 @@ pub struct TabularStrategy;
 impl AnalysisStrategy for TabularStrategy {
     fn id(&self) -> &'static str { "tabular" }
 
-    fn affinity(&self, sheet: &Sheet) -> f32 {
-        estimate_tabular_score(sheet) // 規則的に埋まった矩形領域が多いほど高スコア
+    fn affinity(&self, _sheet: &Sheet, metrics: &SheetMetrics) -> f32 {
+        estimate_tabular_score(metrics) // 規則的に埋まった矩形領域が多いほど高スコア
     }
 
     fn detect_overflow(&self, _ctx: &OverflowContext) -> OverflowDecision {
@@ -232,11 +249,15 @@ impl StrategyRegistry {
     }
 
     /// `--strategy auto`（デフォルト）の場合、affinity が最大の戦略を選ぶ。
+    /// SheetMetricsはここで一度だけ計算し、全戦略のaffinityに配る。
     pub fn select_auto(&self, sheet: &Sheet) -> &dyn AnalysisStrategy {
+        let metrics = compute_sheet_metrics(sheet);
         self.strategies
             .iter()
             .map(AsRef::as_ref)
-            .max_by(|a, b| a.affinity(sheet).total_cmp(&b.affinity(sheet)))
+            .max_by(|a, b| {
+                a.affinity(sheet, &metrics).total_cmp(&b.affinity(sheet, &metrics))
+            })
             .expect("at least one strategy registered")
     }
 }
@@ -259,7 +280,10 @@ extmd <INPUT.xlsx> --strategy tabular     # 明示的に通常表戦略を強制
 
 `affinity` は `StrategyRegistry` が登録済みの全戦略に対して呼び出す。各戦略が
 シートを毎回スキャンして特徴量を計算すると、戦略数に比例して無駄な走査が発生する。
-そこでシートの構造的特徴量を1回だけ計算し、`Sheet` にキャッシュする。
+そこでシートの構造的特徴量を `select_auto` の中で1回だけ計算し、各戦略の
+`affinity` に引数として渡す（[ドメイン設計書 mod.md 5章](domain/mod.md#5-architecturemdからの変更点)
+の通り、`Sheet` 自体にキャッシュは持たせない。`select_auto` は1シートにつき
+1回しか呼ばれないため、`OnceCell`によるキャッシュ機構は不要と判断した）。
 
 ```rust
 pub struct SheetMetrics {
@@ -271,20 +295,13 @@ pub struct SheetMetrics {
     pub merge_irregularity: f32,        // ネイティブ結合セルが単純な矩形でない割合
 }
 
-pub struct Sheet {
-    // ...5.3節のフィールドに加えて
-    metrics_cache: OnceCell<SheetMetrics>,
-}
-
-impl Sheet {
-    pub fn metrics(&self) -> &SheetMetrics {
-        self.metrics_cache.get_or_init(|| compute_sheet_metrics(self))
-    }
+pub fn compute_sheet_metrics(sheet: &Sheet) -> SheetMetrics {
+    // 6.1.2節の各指標を算出する
 }
 ```
 
-`affinity(&self, sheet: &Sheet)` の実装は毎回 `sheet.metrics()` を呼ぶだけでよく、
-実際の計算は最初の呼び出し時にしか走らない。
+`SheetMetrics` と `compute_sheet_metrics` はいずれも `analysis` 層に置く
+（`domain` 層はStrategy選択の都合を一切知らない）。
 
 #### 6.1.2 各指標の算出方法
 
@@ -329,8 +346,7 @@ impl Sheet {
 
 ```rust
 impl AnalysisStrategy for GridPaperStrategy {
-    fn affinity(&self, sheet: &Sheet) -> f32 {
-        let m = sheet.metrics();
+    fn affinity(&self, _sheet: &Sheet, m: &SheetMetrics) -> f32 {
         let narrow_columns = normalize_inverse(m.avg_column_width, 2.0, 12.0);
         let uniformity = 1.0 - normalize(m.column_width_stddev, 0.0, m.avg_column_width.max(1.0) as f32);
         let overflow_signal = m.overflow_candidate_rate;
@@ -342,8 +358,7 @@ impl AnalysisStrategy for GridPaperStrategy {
 }
 
 impl AnalysisStrategy for TabularStrategy {
-    fn affinity(&self, sheet: &Sheet) -> f32 {
-        let m = sheet.metrics();
+    fn affinity(&self, _sheet: &Sheet, m: &SheetMetrics) -> f32 {
         let low_overflow = 1.0 - m.overflow_candidate_rate;
 
         0.4 * m.fill_density + 0.4 * m.row_structural_regularity + 0.2 * low_overflow
