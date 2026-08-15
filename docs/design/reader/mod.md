@@ -67,6 +67,17 @@ pub enum ReaderError {
     Parse(String),
 }
 
+impl std::fmt::Display for ReaderError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ReaderError::Io(e) => write!(f, "{}", e),
+            ReaderError::Parse(msg) => write!(f, "{}", msg),
+        }
+    }
+}
+
+impl std::error::Error for ReaderError {}
+
 /// 指定した `.xlsx` ファイルの全シートを読み込み、`domain::Sheet` の列へ変換する。
 /// シートの絞り込み（要件定義書 5.1 `-s`/`--sheet`）は呼び出し側（`lib.rs`）の責務とし、
 /// `reader` は常に全シートを返す（umya-spreadsheetはEagerパースのため、
@@ -76,9 +87,7 @@ pub fn read_sheets(path: &std::path::Path) -> Result<Vec<domain::Sheet>, ReaderE
 }
 ```
 
-`read_sheets` は `xlsx.rs` の実装へ薄く委譲するだけとし、`mod.rs` 自体はロジックを持たない
-（[domain/mod.md 2章](../domain/mod.md#2-設計方針)の「エントリポイントは横断的関心事のみ」という
-方針を `reader` にも適用する）。
+`read_sheets` は `xlsx.rs` の実装へ薄く委譲するだけとし、`mod.rs` 自体はロジックを持たない（モジュールの公開エントリポイントである `mod.rs` は処理の委譲や横断的関心事のみを扱い、ロジックを中に持たないという設計方針を適用）。
 
 ## 6. 未確定事項
 
