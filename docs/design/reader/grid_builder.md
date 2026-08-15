@@ -87,12 +87,22 @@ Excelは列幅が明示的に設定されていない列に対して既定幅（
 `rows * cols` 件の `domain::Cell` を常に確保するため、Bounding Boxに対して
 実データが疎（sparse）なシートではメモリ使用量が無駄に大きくなる可能性がある。
 [非機能要件](../../requirement/requirements.md#6-非機能要件)が想定する規模
-（数千〜数万セル）では許容範囲と判断するが、極端に疎な巨大シート
-（例: `(1, 1)` と `(100000, 100000)` にだけ値がある等）は現実的なユースケースとして
-想定しないため、上限チェック等は行わない。
+（数千〜数万セル）では許容範囲と判断する。
+
+極端に疎な巨大シート（例: `(1, 1)` と `(100000, 100000)` にだけ値がある等）は
+通常の業務利用では起こりにくいが、`highest_column_and_row()` はシートのメタデータ上の
+座標を返すだけであり、悪意ある/破損した `.xlsx` がこの座標のみを巨大化させることは
+可能である（[docs/security/design-review.md #2](../../security/design-review.md#2-入力ファイルサイズ展開後セル数の上限なしによるリソース枯渇-dos)、
+[Issue #14](https://github.com/MinamiyamaKotaro/extmd/issues/14)）。そのため`grid_builder`自体には
+上限チェックを持たせず、[xlsx.md 3.1節](xlsx.md#31-max_cells-によるシートサイズの上限チェック)の通り、
+`build_grid`の**呼び出し側**（`xlsx.rs::build_sheet`）が`rows * cols`を`max_cells`と比較して
+事前に拒否する設計とする（`grid_builder`は「矩形正規化」という単一責務に留め、
+上限値の意味論・エラー型（`ReaderError::SheetTooLarge`）はより上位の`xlsx.rs`/`reader/mod.md`側に
+持たせるため）。
 
 ## 7. 未確定事項
 
 - `DEFAULT_COLUMN_WIDTH` の値（`umya-spreadsheet`のデフォルト値 `8.38` をそのまま
   使うか、要件定義書のヒューリスティック用に別途チューニングするか）
-- 極端に疎なシートに対するメモリ使用量の実測（6章、実データでの検証が必要）
+- `max_cells`のデフォルト値・実データでのメモリ使用量の実測
+  （[reader/mod.md 6章](mod.md#6-未確定事項)、実データでの検証が必要）

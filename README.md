@@ -27,6 +27,7 @@ extmdは、セルからはみ出して表示されている文字列を検出し
 - [Analysis設計書](docs/design/analysis/mod.md)
 - [Renderer設計書](docs/design/renderer/mod.md)
 - [CLI設計書](docs/design/cli.md)
+- [セキュリティ設計レビュー](docs/security/design-review.md)
 
 ## 使い方（予定）
 
@@ -35,6 +36,15 @@ extmdは、セルからはみ出して表示されている文字列を検出し
 ```sh
 extmd input.xlsx --strategy auto -o output.md
 ```
+
+## 利用上の注意
+
+extmdはv1では、**実行者自身が用意した/信頼して受け取った`.xlsx`ファイルをローカルで
+変換するCLIとしての利用**を想定しています。不特定多数のユーザーが任意の`.xlsx`を
+アップロードするサーバーサイド・マルチテナント環境（Webサービスのバックエンドとして
+extmdをそのまま呼び出す等）での利用は、悪意あるファイルに対する耐性が現行設計では
+十分でないため非推奨です。詳細は[セキュリティ設計レビュー](docs/security/design-review.md)・
+[CLI設計書8章](docs/design/cli.md#8-利用上の注意ローカルcli限定を想定した設計であることの明記)を参照してください。
 
 ## ディレクトリ構成（予定）
 

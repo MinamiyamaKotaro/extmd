@@ -97,6 +97,12 @@ pub struct CliArgs {
     /// 詳細なログ（デバッグ情報など）を標準エラー出力へ表示します。
     #[arg(short, long)]
     pub verbose: bool,
+
+    /// 1シートあたりに許容する最大セル数（rows × cols）。
+    /// 悪意ある/破損したxlsxファイルがシートの座標情報のみを巨大化させることで
+    /// 発生するメモリ枯渇 (DoS) を防ぐための上限（[reader/mod.md 4.1節](reader/mod.md#41-依存ライブラリのセキュリティ検証と監査方針)参照）。
+    #[arg(long, value_name = "N", default_value_t = 1_000_000)]
+    pub max_cells: usize,
 }
 ```
 
@@ -149,6 +155,22 @@ pub struct CliArgs {
 
 `cli.rs`はこの値を算出・上書きせず、`OutputTarget`を組み立てて渡すだけに徹する。CLI側での明示的なオフセット上書き（例: `--heading-offset`）は本設計のv1スコープには含めない（§7参照）。
 
+### 3.4. `max_cells` のマッピングと入力ファイルサイズの上限
+
+[reader/mod.md 4.1節](reader/mod.md#41-依存ライブラリのセキュリティ検証と監査方針)・
+[reader/mod.md 5章](reader/mod.md#5-readererror-と公開api)で導入した`max_cells`は、
+`--max-cells`の値（デフォルト`1_000_000`）をそのまま`ConvertConfig::max_cells`へ渡す
+（6.1節参照）。
+
+これとは別に、ZIP展開・XMLパース自体（`reader::read_sheets`呼び出し）の前段で、
+入力ファイルの物理サイズが`MAX_INPUT_FILE_SIZE_BYTES`（100MB）を超える場合は
+`lib::convert`が`ConvertError::InputFileTooLarge`で早期に拒否する（6.1節）。
+これは`max_cells`（パース後のセル数）とは独立した対策であり、パースが完了する前の
+段階で単純に巨大なファイルを弾くための粗いフィルタである
+（[reader/mod.md 4.1節](reader/mod.md#41-依存ライブラリのセキュリティ検証と監査方針)の
+「多層防御」のMitigation 1に対応。圧縮後サイズしか制限できないため、圧縮率の高い
+Zip Bombそのものは防げない残存リスクである点は同節を参照）。
+
 ---
 
 ## 4. ロギング方針
@@ -175,7 +197,8 @@ pub struct CliArgs {
 | エラー種別 | 原因 | エラーメッセージ形式 (stderr) |
 |---|---|---|
 | `ConvertError::InputFileNotFound(path)` | 入力ファイルが存在しない | `Error: Input file not found: <path>` |
-| `ConvertError::Reader(err)` | Excelファイルの読込・解析エラー | `Error: Failed to read Excel file: <err>` |
+| `ConvertError::InputFileTooLarge { path, size, limit }` | 入力ファイルの物理サイズが上限（100MB）を超過 | `Error: Input file too large: <path> (<size> bytes, limit: <limit> bytes)` |
+| `ConvertError::Reader(err)` | Excelファイルの読込・解析エラー（`ReaderError::SheetTooLarge`によるセル数上限超過を含む、[reader/mod.md 5章](reader/mod.md#5-readererror-と公開api)） | `Error: Failed to read Excel file: <err>` |
 | `ConvertError::Renderer(err)` | Markdownファイル書込、ディレクトリ作成等のI/Oエラー | `Error: Failed to write Markdown output: <err>` |
 | `ConvertError::InvalidStrategy(name)` | 無効な戦略IDが指定された場合 | `Error: Invalid strategy specified: <name>` |
 
@@ -194,6 +217,10 @@ pub mod renderer;
 
 use std::path::PathBuf;
 
+/// 入力ファイルの物理サイズの上限（100MB）。ZIP展開・XMLパース自体が完了する前に
+/// 単純に巨大なファイルを弾くための粗いフィルタ（[3.4節](#34-max_cells-のマッピングと入力ファイルサイズの上限)参照）。
+const MAX_INPUT_FILE_SIZE_BYTES: u64 = 100 * 1024 * 1024;
+
 /// 変換処理全体を制御する設定オブジェクト。
 /// CLI引数に依存しない純粋なデータ型として定義し、単体テストを可能にする。
 pub struct ConvertConfig {
@@ -202,11 +229,14 @@ pub struct ConvertConfig {
     pub strategy_id: String,
     pub strategy_config: analysis::registry::StrategyConfig,
     pub output_target: renderer::OutputTarget,
+    /// 1シートあたりに許容する最大セル数（`--max-cells`、[3.4節](#34-max_cells-のマッピングと入力ファイルサイズの上限)参照）。
+    pub max_cells: usize,
 }
 
 #[derive(Debug)]
 pub enum ConvertError {
     InputFileNotFound(PathBuf),
+    InputFileTooLarge { path: PathBuf, size: u64, limit: u64 },
     Reader(reader::ReaderError),
     Renderer(renderer::RendererError),
     InvalidStrategy(String),
@@ -216,6 +246,11 @@ impl std::fmt::Display for ConvertError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ConvertError::InputFileNotFound(p) => write!(f, "Error: Input file not found: {}", p.display()),
+            ConvertError::InputFileTooLarge { path, size, limit } => write!(
+                f,
+                "Error: Input file too large: {} ({} bytes, limit: {} bytes)",
+                path.display(), size, limit
+            ),
             ConvertError::Reader(e) => write!(f, "Error: Failed to read Excel file: {}", e), // {:?} ではなく {} (Display) を使用
             ConvertError::Renderer(e) => write!(f, "Error: Failed to write Markdown output: {}", e), // {:?} ではなく {} (Display) を使用
             ConvertError::InvalidStrategy(s) => write!(f, "Error: Invalid strategy specified: {}", s),
@@ -228,12 +263,20 @@ impl std::error::Error for ConvertError {}
 /// Excelファイルを読み込み、戦略に沿って解析し、Markdownとして書き出す一連のパイプラインを実行します。
 pub fn convert(config: ConvertConfig) -> Result<(), ConvertError> {
     // 1. 入力ファイルの存在チェック
-    if !config.input_path.exists() {
-        return Err(ConvertError::InputFileNotFound(config.input_path));
+    let metadata = std::fs::metadata(&config.input_path)
+        .map_err(|_| ConvertError::InputFileNotFound(config.input_path.clone()))?;
+
+    // 1.1. 入力ファイルサイズの上限チェック（3.4節）
+    if metadata.len() > MAX_INPUT_FILE_SIZE_BYTES {
+        return Err(ConvertError::InputFileTooLarge {
+            path: config.input_path,
+            size: metadata.len(),
+            limit: MAX_INPUT_FILE_SIZE_BYTES,
+        });
     }
 
-    // 2. Reader: xlsxの読み込み
-    let all_sheets = reader::read_sheets(&config.input_path)
+    // 2. Reader: xlsxの読み込み（max_cellsによるシートサイズ上限チェックを含む、5章参照）
+    let all_sheets = reader::read_sheets(&config.input_path, config.max_cells)
         .map_err(ConvertError::Reader)?;
 
     // 3. 変換対象シートのフィルタリング
@@ -373,6 +416,7 @@ pub fn build_config(args: CliArgs) -> Result<ConvertConfig, String> {
         strategy_id,
         strategy_config,
         output_target,
+        max_cells: args.max_cells,
     })
 }
 ```
@@ -423,3 +467,20 @@ fn main() {
 - **タイムスタンプのタイムゾーン**: `chrono::Local::now()` を用いてローカル時刻で付与するが、コンテナ環境等で UTC となる可能性をドキュメント等で注意喚起する。
 - **エラー出力フォーマット**: 本設計では単純な `eprintln!("{}", err)` としているが、より詳細なスタックトレースやコンテキストが必要な場合は将来的に `anyhow` 等の導入を検討する。
 - **`heading_offset`のCLI明示指定**: `renderer::render`（[renderer/mod.md 4章](renderer/mod.md#4-公開api)）は`OutputTarget`から`heading_offset`を自動算出する内部実装であり、外部から上書きする引数を持たない。CLIから明示指定できるようにする場合は`render`のシグネチャ拡張が必要になるため、既存のrenderer詳細設計（Issue #8）の再検討を伴う。v1では需要が確認できていないためスコープ外とし、将来必要になった時点で別Issueとして起票する。
+
+---
+
+## 8. 利用上の注意（ローカルCLI限定を想定した設計であることの明記）
+
+[reader/mod.md 4.1節](reader/mod.md#41-依存ライブラリのセキュリティ検証と監査方針)の通り、
+extmdが読み込む`.xlsx`のZIP展開・XMLパースは`umya-spreadsheet`のEagerパースに委ねており、
+展開後のデータ量に上限を設ける手段が現行ライブラリ構成にはない（Zip Bombに対する残存リスク）。
+3.4節の`max_cells`・入力ファイルサイズ上限はいずれもパース完了後、または圧縮後サイズのみに
+効く対策であり、パース処理自体の実行中に発生するリソース消費を完全には防げない。
+
+そのため、**extmdはv1では「実行者自身が用意した/信頼して受け取ったファイルをローカルで
+変換する」CLIとしての利用を想定する**。不特定多数のユーザーが任意の`.xlsx`をアップロードする
+サーバーサイド・マルチテナント環境（Webサービスのバックエンド等）でextmdをそのまま
+呼び出す用途は、現行の設計では安全性を保証できないため非推奨とする
+（[docs/security/design-review.md](../security/design-review.md)、[Issue #14](https://github.com/MinamiyamaKotaro/extmd/issues/14)）。
+この注意は[README](../../README.md)にも記載する。

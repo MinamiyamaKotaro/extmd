@@ -13,17 +13,17 @@
 ## 2. 処理フロー
 
 ```rust
-pub(crate) fn read_sheets(path: &std::path::Path) -> Result<Vec<domain::Sheet>, ReaderError> {
+pub(crate) fn read_sheets(path: &std::path::Path, max_cells: usize) -> Result<Vec<domain::Sheet>, ReaderError> {
     let book = umya_spreadsheet::reader::xlsx::read(path)
         .map_err(|e| ReaderError::Parse(e.to_string()))?;
 
     book.get_sheet_collection()
         .iter()
-        .map(build_sheet)
+        .map(|ws| build_sheet(ws, max_cells))
         .collect()
 }
 
-fn build_sheet(ws: &umya_spreadsheet::Worksheet) -> Result<domain::Sheet, ReaderError> {
+fn build_sheet(ws: &umya_spreadsheet::Worksheet, max_cells: usize) -> Result<domain::Sheet, ReaderError> {
     let (highest_col, highest_row) = ws.highest_column_and_row();
 
     // 3章: 列数0シートの扱い
@@ -32,6 +32,19 @@ fn build_sheet(ws: &umya_spreadsheet::Worksheet) -> Result<domain::Sheet, Reader
     } else {
         (highest_row as usize, highest_col as usize)
     };
+
+    // 3.1章: 悪意ある/破損したファイルがメタデータ上の座標のみを巨大化させ、
+    // grid_builder::build_grid の rows * cols 件のメモリ確保でDoSを引き起こすことを防ぐ
+    // （reader/mod.md 4.1節、docs/security/design-review.md #2、Issue #14）。
+    let cell_count = rows.saturating_mul(cols);
+    if cell_count > max_cells {
+        return Err(ReaderError::SheetTooLarge {
+            name: ws.get_name().to_string(),
+            rows,
+            cols,
+            limit: max_cells,
+        });
+    }
 
     let cells = grid_builder::build_grid(ws, rows, cols); // grid_builder.md
     let merges = validation::collect_valid_merges(ws, rows, cols); // validation.md
@@ -68,15 +81,27 @@ fn build_sheet(ws: &umya_spreadsheet::Worksheet) -> Result<domain::Sheet, Reader
 | ファイルは正常だが、シートにセルデータが1つもない | `rows=0, cols=1` の空`Grid`として処理続行 |
 | ファイル自体の読み込み・パースに失敗（破損等） | `ReaderError::Parse` を返しシート単位では処理しない |
 
+### 3.1 `max_cells` によるシートサイズの上限チェック
+
+`umya_spreadsheet::reader::xlsx::read` の時点で対象ファイル全体のパースは既に完了しており
+（Eagerパース、[mod.md 4章](mod.md#4-使用ライブラリの決定-umya-spreadsheet)）、この
+チェックはパース自体の実行中に発生しうるリソース消費を防ぐものではない。あくまで
+「パースには成功したが、`Grid`構築（`grid_builder::build_grid`）に必要な
+`rows * cols` 件のメモリ確保がメモリ枯渇を引き起こす」という、`highest_column_and_row()`
+が返す座標を悪意的に巨大化させた場合のリスクに対する防御である
+（[mod.md 4.1節](mod.md#41-依存ライブラリのセキュリティ検証と監査方針)が明記する
+Zip Bomb由来の残存リスクとは区別される）。
+
 ## 4. シート単位のエラー伝播
 
-`book.get_sheet_collection().iter().map(build_sheet).collect()` により、
+`book.get_sheet_collection().iter().map(|ws| build_sheet(ws, max_cells)).collect()` により、
 1シートでも `build_sheet` が失敗（`ReaderError` を返す）した場合は全体を
 `Result::Err` として打ち切る（`Iterator::collect::<Result<Vec<_>, _>>()` の挙動）。
 一部のシートだけ変換をスキップして処理を続行する「部分成功」は v1 では扱わない
 （[要件定義書 5.2](../../requirement/requirements.md#52-入力)の「エラー発生時は原因が特定しやすい
 メッセージを出力する」という方針とも整合し、どのシートが原因かを呼び出し元が
-特定しやすくなる）。
+特定しやすくなる）。`SheetTooLarge`（3.1節）もこの伝播規則に従い、超過したシートが
+1つでもあれば全体を打ち切る。
 
 ## 5. 未確定事項
 
