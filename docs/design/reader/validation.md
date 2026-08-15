@@ -22,7 +22,7 @@ pub(crate) fn collect_valid_merges(
     ws.merge_cells()
         .iter()
         .filter_map(|range| to_domain_range(range))
-        .filter(|m| is_within_bounds(m, rows, cols))
+        .filter(|m| is_ordered(m) && is_within_bounds(m, rows, cols))
         .collect()
 }
 
@@ -37,6 +37,18 @@ fn to_domain_range(range: &umya_spreadsheet::Range) -> Option<domain::MergeRange
         col_start: range.coordinate_start_col()?.num().checked_sub(1)? as usize,
         col_end: range.coordinate_end_col()?.num().checked_sub(1)? as usize,
     })
+}
+
+/// `row_start <= row_end`かつ`col_start <= col_end`か。umya-spreadsheetの
+/// `Range::set_range`はXMLの`mergeCell`要素の`ref`属性（例: `"A1:B2"`）を`:`で
+/// 分割し、前半をそのまま開始座標、後半をそのまま終了座標として採用するだけで、
+/// 大小関係の正規化は行わない。そのため破損した/悪意あるxlsxが`ref="B2:A1"`の
+/// ように開始・終了を逆転させた値を埋め込んだ場合、そのまま`row_start > row_end`
+/// （または`col_start > col_end`）の`MergeRange`が生成されてしまう。これを後段
+/// （`analysis`層が`Block`を構築する際等）まで伝播させると`usize`アンダーフローの
+/// リスクになるため、Reader側で明示的に検証し破棄する（PR #20レビュー指摘を反映）。
+fn is_ordered(m: &domain::MergeRange) -> bool {
+    m.row_start <= m.row_end && m.col_start <= m.col_end
 }
 
 fn is_within_bounds(m: &domain::MergeRange, rows: usize, cols: usize) -> bool {

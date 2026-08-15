@@ -15,7 +15,9 @@ pub(crate) fn from_serial(serial: f64) -> NaiveDateTime {
 /// 固定のコード文字列と、`y`/`m`/`d`/`h`/`s`等の日付トークンを含むカスタム書式を
 /// 日付とみなす（docs/design/reader/date.md 4章）。
 ///
-/// リテラル文字列区間（`"..."`の内側）とエスケープされた1文字（`\`の直後の1文字）は
+/// リテラル文字列区間（`"..."`の内側）・エスケープされた1文字（`\`の直後の1文字）・
+/// 角括弧区間（`[...]`、色指定`[Red]`やロケール指定`[$-de-DE]`等。経過時間書式
+/// `[h]`/`[hh]`/`[m]`/`[mm]`/`[s]`/`[ss]`のみ例外的に日付トークンとして扱う）は
 /// トークン検出の対象から除外する（同章の「誤検出（偽陽性）のリスク」への対応）。
 pub(crate) fn is_date_formatted(format_code: &str) -> bool {
     if format_code.is_empty() || format_code == "General" {
@@ -23,6 +25,9 @@ pub(crate) fn is_date_formatted(format_code: &str) -> bool {
     }
     contains_date_token(format_code)
 }
+
+/// 経過時間書式（`[h]`等）として認識する角括弧内容（大文字小文字は区別しない）。
+const ELAPSED_TIME_BRACKET_TOKENS: [&str; 6] = ["h", "hh", "m", "mm", "s", "ss"];
 
 fn contains_date_token(format_code: &str) -> bool {
     let mut chars = format_code.chars().peekable();
@@ -39,6 +44,27 @@ fn contains_date_token(format_code: &str) -> bool {
             '\\' => {
                 // バックスラッシュエスケープされた次の1文字はトークン判定から除外する。
                 chars.next();
+            }
+            '[' => {
+                // 色指定（`[Red]`）・ロケール指定（`[$-de-DE]`）等は、"Red"の`d`や
+                // "Magenta"の`M`のようにたまたま日付トークンに見える文字を含みうるため、
+                // 角括弧内は経過時間書式（`[h]`等）と完全一致する場合のみ日付トークンと
+                // みなし、それ以外は内容ごと無視する。
+                let mut bracket_content = String::new();
+                let mut closed = false;
+                for next in chars.by_ref() {
+                    if next == ']' {
+                        closed = true;
+                        break;
+                    }
+                    bracket_content.push(next);
+                }
+                if closed
+                    && ELAPSED_TIME_BRACKET_TOKENS
+                        .contains(&bracket_content.to_ascii_lowercase().as_str())
+                {
+                    return true;
+                }
             }
             'y' | 'Y' | 'm' | 'M' | 'd' | 'D' | 'h' | 'H' | 's' | 'S' => return true,
             _ => {}
@@ -79,6 +105,29 @@ mod tests {
     fn escaped_tokens_are_ignored() {
         // `\m`はエスケープされた1文字であり、日付トークンとして扱わない。
         assert!(!is_date_formatted("0\\m\\d"));
+    }
+
+    #[test]
+    fn color_bracket_tokens_are_ignored() {
+        // レビュー指摘: "[Red]"の`d`・"[Magenta]"の`M`を日付トークンと誤検出しない。
+        assert!(!is_date_formatted("[Red]0.00"));
+        assert!(!is_date_formatted("[Magenta]0.00"));
+    }
+
+    #[test]
+    fn locale_bracket_tokens_are_ignored() {
+        // レビュー指摘: ロケール指定 "[$-de-DE]"の`d`・"[$-sv-SE]"の`s`を誤検出しない。
+        assert!(!is_date_formatted("[$-de-DE]0.00"));
+        assert!(!is_date_formatted("[$-sv-SE]0.00"));
+    }
+
+    #[test]
+    fn elapsed_time_bracket_tokens_are_dates() {
+        // `[h]`/`[mm]`/`[ss]`は経過時間書式であり、これ自体は日付トークンとして扱う
+        // （角括弧の外に他の日付トークン文字を含まない形で単体検証する）。
+        assert!(is_date_formatted("[h]"));
+        assert!(is_date_formatted("[mm]"));
+        assert!(is_date_formatted("[ss]"));
     }
 
     #[test]

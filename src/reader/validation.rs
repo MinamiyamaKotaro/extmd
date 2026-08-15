@@ -15,6 +15,20 @@ pub(crate) fn collect_valid_merges(
     ws.merge_cells()
         .iter()
         .filter_map(|range| match to_domain_range(range) {
+            Some(m) if !is_ordered(&m) => {
+                // 破損した/悪意あるxlsxのXMLがmergeCellのref属性で開始・終了座標を
+                // 逆転させている（例: "B1:A2"）ケース。domain::MergeRangeやそれを
+                // 消費する側（例: Block::span()）はrow_start <= row_end等を前提とするため、
+                // ここで検証せずに通すと下流でusizeアンダーフローを引き起こしうる。
+                log::warn!(
+                    "Ignoring merge cell range with inverted coordinates: rows {}-{}, cols {}-{}",
+                    m.row_start + 1,
+                    m.row_end + 1,
+                    m.col_start + 1,
+                    m.col_end + 1
+                );
+                None
+            }
             Some(m) if is_within_bounds(&m, rows, cols) => Some(m),
             Some(m) => {
                 log::warn!(
@@ -46,6 +60,14 @@ fn to_domain_range(range: &umya_spreadsheet::Range) -> Option<domain::MergeRange
         col_start: range.coordinate_start_col()?.num().checked_sub(1)? as usize,
         col_end: range.coordinate_end_col()?.num().checked_sub(1)? as usize,
     })
+}
+
+/// `row_start <= row_end`かつ`col_start <= col_end`か。umya-spreadsheetの`Range::set_range`
+/// は開始・終了座標をXMLの`ref`属性の文字列順そのまま採用し、大小関係を正規化しない
+/// （破損/悪意あるファイルが"B1:A2"のような逆転した範囲を埋め込むことを妨げない）ため、
+/// Reader側で明示的に検証する。
+fn is_ordered(m: &domain::MergeRange) -> bool {
+    m.row_start <= m.row_end && m.col_start <= m.col_end
 }
 
 fn is_within_bounds(m: &domain::MergeRange, rows: usize, cols: usize) -> bool {
@@ -84,5 +106,26 @@ mod tests {
         ws.add_merge_cells("A1:B2");
         // Gridは1x1しかないため、A1:B2は範囲外として破棄される。
         assert!(collect_valid_merges(&ws, 1, 1).is_empty());
+    }
+
+    #[test]
+    fn collect_valid_merges_discards_inverted_range() {
+        // レビュー指摘: 破損/悪意あるxlsxが開始・終了座標を逆転させた"ref"を持ちうる。
+        // umya-spreadsheet::Range::set_rangeは大小関係を正規化しないため、
+        // Reader側で明示的に破棄する必要がある。
+        let mut ws = umya_spreadsheet::Worksheet::default();
+        ws.add_merge_cells("B2:A1");
+        assert!(collect_valid_merges(&ws, 10, 10).is_empty());
+    }
+
+    #[test]
+    fn is_ordered_rejects_inverted_range() {
+        let inverted = domain::MergeRange {
+            row_start: 1,
+            row_end: 0,
+            col_start: 0,
+            col_end: 0,
+        };
+        assert!(!is_ordered(&inverted));
     }
 }
