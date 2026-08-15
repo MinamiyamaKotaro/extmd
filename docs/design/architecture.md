@@ -66,6 +66,7 @@ pub struct Cell {
     pub wrap_text: bool,
     pub alignment: Alignment,
     pub font: FontInfo,           // サイズ・太字など
+    pub number_format: Option<String>, // 表示形式コード
 }
 
 /// はみ出し判定の対象となる1セルとその右方向の空セル列。

@@ -23,6 +23,7 @@ extmdは、セルからはみ出して表示されている文字列を検出し
 - [要件定義書](docs/requirement/requirements.md)
 - [アーキテクチャ設計書](docs/design/architecture.md)
 - [ドメイン設計書](docs/design/domain/mod.md)
+- [Reader設計書](docs/design/reader/mod.md)
 
 ## 使い方（予定）
 
@@ -53,9 +54,13 @@ extmd/
 │   │   ├── sheet.rs                # Sheet, MergeRange
 │   │   ├── block.rs                 # Block, BlockSource
 │   │   └── document.rs               # RowKind, ResolvedRow, RenderedRow, Document
-│   ├── reader/                 # [1] Reader: xlsxファイル → Sheet
+│   ├── reader/                 # [1] Reader: xlsxファイル → Sheet（docs/design/reader/参照）
 │   │   ├── mod.rs
-│   │   └── xlsx.rs
+│   │   ├── xlsx.rs               # umya-spreadsheetでの読み込み・他モジュールの統合
+│   │   ├── cell_mapper.rs         # umya-spreadsheet::Cell → domain::Cell/CellValueの変換
+│   │   ├── date.rs                # Excelシリアル値 → chrono::NaiveDateTime変換
+│   │   ├── grid_builder.rs        # 矩形正規化によるdomain::Grid構築
+│   │   └── validation.rs          # 結合セル範囲(MergeRange)の境界検証
 │   ├── analysis/                # [2]+[3] StrategySelector, Analyzer
 │   │   ├── mod.rs
 │   │   ├── strategy.rs            # AnalysisStrategy トレイト定義
@@ -82,6 +87,7 @@ extmd/
 | ディレクトリ | 設計書の該当箇所 |
 |---|---|
 | `domain/` | アーキテクチャ設計書 3. コアドメイン型 / [ドメイン設計書](docs/design/domain/mod.md)全体（`src/domain/`の各ファイルに`docs/design/domain/`の各mdファイルが対応） |
+| `reader/` | アーキテクチャ設計書 2. パイプライン全体像 `[1] Reader` / [Reader設計書](docs/design/reader/mod.md)全体（`src/reader/`の各ファイルに`docs/design/reader/`の各mdファイルが対応） |
 | `analysis/strategy.rs` | 4. `AnalysisStrategy` トレイト |
 | `analysis/strategies/` | 5. 具体的な戦略実装 |
 | `analysis/registry.rs` | 6. 戦略の選択（`StrategySelector`） |

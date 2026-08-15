@@ -83,6 +83,7 @@ pub struct Cell {
     pub wrap_text: bool,
     pub alignment: Alignment,
     pub font: FontInfo,
+    pub number_format: Option<String>, // 表示形式コード（例: "#,##0", "yyyy/m/d"）。未設定なら None
 }
 
 impl Cell {
@@ -91,6 +92,12 @@ impl Cell {
     }
 }
 ```
+
+**`number_format`フィールドについて:** `display_text()`（1章）が呼ぶ `format_number`/`format_date`
+がExcelの表示形式（桁区切り・パーセンテージ・和暦等、4章）を再現するには、そのセルの
+表示形式コードが必要になる。Readerがこれを抽出して格納できるよう、`Cell`にフィールドとして
+追加した（[Issue #4のreader層設計](https://github.com/MinamiyamaKotaro/extmd/issues/4)で決定。
+詳細は[reader/cell_mapper.md 6章](../reader/cell_mapper.md#6-number_format-フィールドの追加domain層への変更)参照）。
 
 **設計判断:** `column_width` は本来「列」の属性だが、`Cell` にも複製して持たせる。
 はみ出し判定（`is_overflow_candidate(cell, next, threshold)`）が `Cell` 単体を見るだけで
