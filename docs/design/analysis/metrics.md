@@ -123,7 +123,7 @@ privateのままにすると、戦略実装から`SheetMetrics`の値を読め�
     v1スコープ外と明記する制約）を結合範囲の2行目以降で空白として正しく扱うことを
     `tests/analysis.rs`で確認している。
   - `mixed_workbook.xlsx`は1ワークブックに方眼紙シートと通常表シートを同居させ、
-    [architecture.md 6章](../architecture.md#6-戦略の選択strategyregistry)が要件とする
+    [architecture.md 6章](../architecture.md#6-戦略の選択strategyselector)が要件とする
     「1ファイル内に方眼紙シートと通常表シートが混在するケース」（要件定義書8章 #2）が
     シートごとに正しく判定されることを確認する。
 - 各指標の重み・しきい値のチューニングは[registry.md 1章](registry.md#1-strategyconfig)の
