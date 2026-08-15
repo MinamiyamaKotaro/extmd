@@ -5,8 +5,8 @@ Excelファイル（.xlsx）をMarkdownに変換するCLIツール（Rust製）�
 > **ステータス: 実装中。** 設計（要件定義・アーキテクチャ設計・詳細設計・セキュリティレビュー）は
 > 完了し、[Issue #17](https://github.com/MinamiyamaKotaro/extmd/issues/17)に基づき
 > `docs/design/architecture.md`のパイプライン順（domain → reader → analysis → renderer → cli）で
-> 実装を進めています。現時点では`domain`層・`reader`層が実装済みで、CLIとして動作する状態には
-> まだ達していません。
+> 実装を進めています。現時点では`domain`層・`reader`層・`analysis`層が実装済みで、CLIとして
+> 動作する状態にはまだ達していません。
 
 ## 特徴
 
@@ -54,15 +54,15 @@ extmdをそのまま呼び出す等）での利用は、悪意あるファイル
 [アーキテクチャ設計書](docs/design/architecture.md)のパイプライン
 （Reader → StrategySelector → Analyzer → Renderer）にそのまま対応させた構成にしています。
 CLI（`main.rs`）はライブラリ（`lib.rs`）を薄く呼び出すだけにし、変換ロジック本体を
-`main.rs`を経由せずに単体テストできるようにします。`domain/`・`reader/`は実装済み、それ以外
-（`analysis/`・`renderer/`・`cli.rs`・`main.rs`）は[Issue #17](https://github.com/MinamiyamaKotaro/extmd/issues/17)で今後実装予定です。
+`main.rs`を経由せずに単体テストできるようにします。`domain/`・`reader/`・`analysis/`は実装済み、
+それ以外（`renderer/`・`cli.rs`・`main.rs`）は[Issue #17](https://github.com/MinamiyamaKotaro/extmd/issues/17)で今後実装予定です。
 
 ```
 extmd/
 ├── Cargo.toml
 ├── src/
 │   ├── main.rs              # (未実装) バイナリエントリポイント。cli::build_config()を呼び、extmd::convert()を実行するだけ
-│   ├── lib.rs                # 公開API。現状はpub mod domain; pub mod reader;のみ（convert()等はcli実装時に追加）
+│   ├── lib.rs                # 公開API。現状はpub mod analysis; pub mod domain; pub mod reader;のみ（convert()等はcli実装時に追加）
 │   ├── cli.rs                 # (未実装) clapによるCLI引数定義（--strategy, --sheet, -o, --split, --clean等）とConvertConfigへの変換（docs/design/cli.md参照）
 │   ├── domain/                # 実装済み。コアドメイン型。他のどの層にも依存しない最下層（docs/design/domain/参照）
 │   │   ├── mod.rs
@@ -78,16 +78,16 @@ extmd/
 │   │   ├── date.rs                # Excelシリアル値 → chrono::NaiveDateTime変換
 │   │   ├── grid_builder.rs        # 矩形正規化によるdomain::Grid構築
 │   │   └── validation.rs          # 結合セル範囲(MergeRange)の境界検証
-│   ├── analysis/                # (未実装) [2]+[3] StrategySelector, Analyzer
+│   ├── analysis/                # 実装済み。[2]+[3] StrategySelector, Analyzer（docs/design/analysis/参照）
 │   │   ├── mod.rs
 │   │   ├── strategy.rs            # AnalysisStrategy トレイト定義
-│   │   ├── registry.rs            # StrategyRegistry / select_auto
+│   │   ├── registry.rs            # StrategyRegistry / StrategyConfig / select_auto
 │   │   ├── metrics.rs             # SheetMetrics計算（affinity用の特徴量）
 │   │   ├── heuristics.rs          # is_overflow_candidate等の共通ロジック
 │   │   └── strategies/
 │   │       ├── mod.rs
-│   │       ├── grid_paper.rs        # GridPaperStrategy
-│   │       └── tabular.rs           # TabularStrategy
+│   │       ├── grid_paper.rs        # GridPaperStrategy（デフォルト、方眼紙向け）
+│   │       └── tabular.rs           # TabularStrategy（通常の集計表向け）
 │   └── renderer/                # (未実装) [4] Renderer: Document → Markdown文字列
 │       ├── mod.rs
 │       ├── flow.rs                # RowKind::Flow行の変換（段落・見出し）
@@ -123,7 +123,7 @@ extmd/
 4. 実装・テスト（進行中、[Issue #17](https://github.com/MinamiyamaKotaro/extmd/issues/17)）
    - [x] `domain`層
    - [x] `reader`層
-   - [ ] `analysis`層
+   - [x] `analysis`層
    - [ ] `renderer`層
    - [ ] `cli`（`main.rs`/`cli.rs`/`lib.rs`公開API）
 
