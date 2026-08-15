@@ -24,6 +24,8 @@ extmdは、セルからはみ出して表示されている文字列を検出し
 - [アーキテクチャ設計書](docs/design/architecture.md)
 - [ドメイン設計書](docs/design/domain/mod.md)
 - [Reader設計書](docs/design/reader/mod.md)
+- [Analysis設計書](docs/design/analysis/mod.md)
+- [Renderer設計書](docs/design/renderer/mod.md)
 
 ## 使い方（予定）
 
@@ -71,9 +73,12 @@ extmd/
 │   │       ├── mod.rs
 │   │       ├── grid_paper.rs        # GridPaperStrategy
 │   │       └── tabular.rs           # TabularStrategy
-│   └── renderer/                # [4] Renderer: Vec<Block> → Markdown文字列
+│   └── renderer/                # [4] Renderer: Document → Markdown文字列
 │       ├── mod.rs
-│       └── markdown.rs
+│       ├── flow.rs                # RowKind::Flow行の変換（段落・見出し）
+│       ├── table.rs               # RowKind::TableRow行のMarkdownパイプテーブル変換
+│       ├── escape.rs              # Markdown特殊文字のエスケープ
+│       └── output.rs              # OutputTargetに基づく書き込み・ファイル名サニタイズ
 ├── tests/
 │   ├── fixtures/                # 方眼紙/通常表のサンプルxlsx
 │   └── conversion.rs             # 結合テスト・スナップショットテスト
@@ -89,6 +94,7 @@ extmd/
 | `domain/` | アーキテクチャ設計書 3. コアドメイン型 / [ドメイン設計書](docs/design/domain/mod.md)全体（`src/domain/`の各ファイルに`docs/design/domain/`の各mdファイルが対応） |
 | `reader/` | アーキテクチャ設計書 2. パイプライン全体像 `[1] Reader` / [Reader設計書](docs/design/reader/mod.md)全体（`src/reader/`の各ファイルに`docs/design/reader/`の各mdファイルが対応） |
 | `analysis/` | アーキテクチャ設計書 2. パイプライン全体像 `[2]+[3]` StrategySelector/Analyzer / [Analysis設計書](docs/design/analysis/mod.md)全体（`src/analysis/`の各ファイルに`docs/design/analysis/`の各mdファイルが対応） |
+| `renderer/` | アーキテクチャ設計書 2. パイプライン全体像 `[4]` Renderer / [Renderer設計書](docs/design/renderer/mod.md)全体（`src/renderer/`の各ファイルに`docs/design/renderer/`の各mdファイルが対応） |
 
 新しいドメイン戦略を追加する際は `analysis/strategies/` に1ファイル追加するだけで、
 既存モジュールへの変更が不要になることを意図した構成です（設計書7章）。
