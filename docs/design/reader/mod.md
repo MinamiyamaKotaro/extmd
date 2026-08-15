@@ -155,7 +155,10 @@ pub fn read_sheets(path: &std::path::Path, max_cells: usize) -> Result<Vec<domai
 
 - 存在しない/破損している/非対応形式のファイルに対するエラーメッセージの具体的な文面
   （[要件定義書 5.2](../../requirement/requirements.md#52-入力)「原因が特定しやすいメッセージ」との整合は
-  実装フェーズで詰める）
+  実装フェーズで詰める）。Issue #29での検討により、`ReaderError`自体は入力パスを持たない
+  設計を維持しつつ、呼び出し元の`ConvertError::Reader(PathBuf, ReaderError)`（[cli.md 6.1節](../cli.md#61-srclibrs)）に
+  入力パスを持たせることで、最終的なエラーメッセージには`Error: Failed to read Excel file <path>: <err>`の
+  形でパスが含まれるようにした。文面のさらなる調整は実データ・実ユースケースでの検証待ち
 - `ReaderError::Parse` が保持する文字列の情報量（umya-spreadsheet側のエラー型をどこまで
   透過的に保持するか）
 - `max_cells`（4.1節・5章）のデフォルト値の妥当性（実データでの検証が必要、[cli.md](../cli.md)参照）
