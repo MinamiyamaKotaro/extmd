@@ -1,0 +1,3 @@
+# Dotfiles / dot directories (e.g. .claude/ tooling config)
+.*
+!.gitignore
