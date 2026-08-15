@@ -2,8 +2,11 @@
 
 Excelファイル（.xlsx）をMarkdownに変換するCLIツール（Rust製）。
 
-> **ステータス: 設計段階。** まだ実装（Cargoプロジェクト）は存在せず、
-> `docs/` 配下の要件定義・アーキテクチャ設計を進めている段階です。
+> **ステータス: 実装中。** 設計（要件定義・アーキテクチャ設計・詳細設計・セキュリティレビュー）は
+> 完了し、[Issue #17](https://github.com/MinamiyamaKotaro/extmd/issues/17)に基づき
+> `docs/design/architecture.md`のパイプライン順（domain → reader → analysis → renderer → cli）で
+> 実装を進めています。現時点では`domain`層のみ実装済みで、CLIとして動作する状態には
+> まだ達していません。
 
 ## 特徴
 
@@ -46,35 +49,36 @@ extmdをそのまま呼び出す等）での利用は、悪意あるファイル
 十分でないため非推奨です。詳細は[セキュリティ設計レビュー](docs/security/design-review.md)・
 [CLI設計書8章](docs/design/cli.md#8-利用上の注意ローカルcli限定を想定した設計であることの明記)を参照してください。
 
-## ディレクトリ構成（予定）
+## ディレクトリ構成
 
 [アーキテクチャ設計書](docs/design/architecture.md)のパイプライン
-（Reader → StrategySelector → Analyzer → Renderer）にそのまま対応させた構成を想定しています。
+（Reader → StrategySelector → Analyzer → Renderer）にそのまま対応させた構成にしています。
 CLI（`main.rs`）はライブラリ（`lib.rs`）を薄く呼び出すだけにし、変換ロジック本体を
-`main.rs`を経由せずに単体テストできるようにします。
+`main.rs`を経由せずに単体テストできるようにします。`domain/`は実装済み、それ以外
+（`reader/`・`analysis/`・`renderer/`・`cli.rs`・`main.rs`）は[Issue #17](https://github.com/MinamiyamaKotaro/extmd/issues/17)で今後実装予定です。
 
 ```
 extmd/
 ├── Cargo.toml
 ├── src/
-│   ├── main.rs              # バイナリエントリポイント。cli::build_config()を呼び、extmd::convert()を実行するだけ
-│   ├── lib.rs                # 公開API（convert()、ConvertConfig、ConvertError等）。cliモジュールを含む
-│   ├── cli.rs                 # clapによるCLI引数定義（--strategy, --sheet, -o, --split, --clean等）とConvertConfigへの変換（docs/design/cli.md参照）
-│   ├── domain/                # コアドメイン型。他のどの層にも依存しない最下層（docs/design/domain/参照）
+│   ├── main.rs              # (未実装) バイナリエントリポイント。cli::build_config()を呼び、extmd::convert()を実行するだけ
+│   ├── lib.rs                # 公開API。現状はpub mod domain;のみ（convert()等はcli実装時に追加）
+│   ├── cli.rs                 # (未実装) clapによるCLI引数定義（--strategy, --sheet, -o, --split, --clean等）とConvertConfigへの変換（docs/design/cli.md参照）
+│   ├── domain/                # 実装済み。コアドメイン型。他のどの層にも依存しない最下層（docs/design/domain/参照）
 │   │   ├── mod.rs
 │   │   ├── cell.rs               # CellValue, Alignment, FontInfo, Cell
 │   │   ├── grid.rs                # Grid<T>（行優先フラット2次元配列）
 │   │   ├── sheet.rs                # Sheet, MergeRange
 │   │   ├── block.rs                 # Block, BlockSource
 │   │   └── document.rs               # RowKind, ResolvedRow, RenderedRow, Document
-│   ├── reader/                 # [1] Reader: xlsxファイル → Sheet（docs/design/reader/参照）
+│   ├── reader/                 # (未実装) [1] Reader: xlsxファイル → Sheet（docs/design/reader/参照）
 │   │   ├── mod.rs
 │   │   ├── xlsx.rs               # umya-spreadsheetでの読み込み・他モジュールの統合
 │   │   ├── cell_mapper.rs         # umya-spreadsheet::Cell → domain::Cell/CellValueの変換
 │   │   ├── date.rs                # Excelシリアル値 → chrono::NaiveDateTime変換
 │   │   ├── grid_builder.rs        # 矩形正規化によるdomain::Grid構築
 │   │   └── validation.rs          # 結合セル範囲(MergeRange)の境界検証
-│   ├── analysis/                # [2]+[3] StrategySelector, Analyzer
+│   ├── analysis/                # (未実装) [2]+[3] StrategySelector, Analyzer
 │   │   ├── mod.rs
 │   │   ├── strategy.rs            # AnalysisStrategy トレイト定義
 │   │   ├── registry.rs            # StrategyRegistry / select_auto
@@ -84,15 +88,14 @@ extmd/
 │   │       ├── mod.rs
 │   │       ├── grid_paper.rs        # GridPaperStrategy
 │   │       └── tabular.rs           # TabularStrategy
-│   └── renderer/                # [4] Renderer: Document → Markdown文字列
+│   └── renderer/                # (未実装) [4] Renderer: Document → Markdown文字列
 │       ├── mod.rs
 │       ├── flow.rs                # RowKind::Flow行の変換（段落・見出し）
 │       ├── table.rs               # RowKind::TableRow行のMarkdownパイプテーブル変換
 │       ├── escape.rs              # Markdown特殊文字のエスケープ
 │       └── output.rs              # OutputTargetに基づく書き込み・ファイル名サニタイズ
-├── tests/
-│   ├── fixtures/                # 方眼紙/通常表のサンプルxlsx
-│   └── conversion.rs             # 結合テスト・スナップショットテスト
+├── tests/                    # (未実装) 結合テスト・スナップショットテスト（domain/の単体テストは各ファイル内に実装済み）
+│   └── fixtures/                # 方眼紙/通常表のサンプルxlsx
 └── docs/
     ├── requirement/
     ├── design/
@@ -103,7 +106,7 @@ extmd/
 
 | ディレクトリ | 設計書の該当箇所 |
 |---|---|
-| `domain/` | アーキテクチャ設計書 3. コアドメイン型 / [ドメイン設計書](docs/design/domain/mod.md)全体（`src/domain/`の各ファイルに`docs/design/domain/`の各mdファイルが対応） |
+| `domain/` | アーキテクチャ設計書 3. コアドメイン型 / [Domain設計書](docs/design/domain/mod.md)全体（`src/domain/`の各ファイルに`docs/design/domain/`の各mdファイルが対応） |
 | `reader/` | アーキテクチャ設計書 2. パイプライン全体像 `[1] Reader` / [Reader設計書](docs/design/reader/mod.md)全体（`src/reader/`の各ファイルに`docs/design/reader/`の各mdファイルが対応） |
 | `analysis/` | アーキテクチャ設計書 2. パイプライン全体像 `[2]+[3]` StrategySelector/Analyzer / [Analysis設計書](docs/design/analysis/mod.md)全体（`src/analysis/`の各ファイルに`docs/design/analysis/`の各mdファイルが対応） |
 | `renderer/` | アーキテクチャ設計書 2. パイプライン全体像 `[4]` Renderer / [Renderer設計書](docs/design/renderer/mod.md)全体（`src/renderer/`の各ファイルに`docs/design/renderer/`の各mdファイルが対応） |
@@ -114,9 +117,14 @@ extmd/
 ## ロードマップ
 
 1. 要件定義（完了）
-2. アーキテクチャ設計（進行中）
-3. セキュリティ観点の整理
-4. 実装・テスト
+2. アーキテクチャ設計・詳細設計（完了）
+3. セキュリティ観点の整理（完了、[セキュリティ設計レビュー](docs/security/design-review.md)）
+4. 実装・テスト（進行中、[Issue #17](https://github.com/MinamiyamaKotaro/extmd/issues/17)）
+   - [x] `domain`層
+   - [ ] `reader`層
+   - [ ] `analysis`層
+   - [ ] `renderer`層
+   - [ ] `cli`（`main.rs`/`cli.rs`/`lib.rs`公開API）
 
 ## ライセンス
 

@@ -1,5 +1,6 @@
 use super::FontInfo;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlockSource {
     /// 単独セル（はみ出し・結合いずれもなし）。
     Single,
@@ -11,6 +12,7 @@ pub enum BlockSource {
 
 /// Analyzerが`Sheet`のセル群（はみ出し・ネイティブ結合いずれか、または単独セル）から
 /// 生成する、変換後の論理的なテキスト単位。
+#[derive(Debug, Clone, PartialEq)]
 pub struct Block {
     pub row: usize,
     pub col_start: usize,
@@ -24,6 +26,13 @@ pub struct Block {
 
 impl Block {
     pub fn span(&self) -> usize {
+        // `col_end >= col_start`はAnalyzerが`Block`を構築する際の契約であり、外部入力を
+        // 直接扱うわけではない内部不変条件のため、renderer/flow.mdと同じ方針
+        // （契約違反はランタイムのクランプではなくdebug_assertで早期検出する）に従う。
+        debug_assert!(
+            self.col_end >= self.col_start,
+            "Block: col_end must be >= col_start"
+        );
         self.col_end - self.col_start + 1
     }
 }
@@ -55,5 +64,16 @@ mod tests {
     #[test]
     fn span_merged_range() {
         assert_eq!(block(1, 4).span(), 4);
+    }
+
+    #[test]
+    #[cfg_attr(
+        debug_assertions,
+        should_panic(expected = "col_end must be >= col_start")
+    )]
+    fn span_panics_in_debug_when_col_end_before_col_start() {
+        // レビュー指摘: col_end < col_start の不正なBlockに対する`usize`アンダーフロー対策。
+        // デバッグビルドではdebug_assertで早期検出する（リリースビルドでの挙動保証はしない）。
+        let _ = block(4, 1).span();
     }
 }

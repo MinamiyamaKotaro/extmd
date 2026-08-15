@@ -3,7 +3,7 @@
 ///
 /// 設計判断（row-majorフラット配列を選んだ理由・境界チェックの方針等）は
 /// docs/design/domain/grid.md を参照。
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Grid<T> {
     rows: usize,
     cols: usize,
@@ -13,11 +13,19 @@ pub struct Grid<T> {
 impl<T> Grid<T> {
     /// `cols == 0` は許容しない。`chunks(0)`が常にpanicするため（`iter_rows`参照）。
     /// `rows == 0` は許容する（列は定義されているが行データのない空シートを表現できる）。
+    ///
+    /// `rows * cols`は`checked_mul`でオーバーフローを検出する。オーバーフローした状態で
+    /// `cells.len()`とたまたま一致してしまうと、後続の`row`/`iter_rows`が誤ったチャンク
+    /// 幅で境界外アクセスを起こしうるため、単純な`assert_eq!(cells.len(), rows * cols)`
+    /// より安全側に倒す。
     pub fn new(rows: usize, cols: usize, cells: Vec<T>) -> Self {
         assert!(cols > 0, "Grid: cols must be greater than 0");
+        let expected_len = rows
+            .checked_mul(cols)
+            .expect("Grid: rows * cols overflowed usize");
         assert_eq!(
             cells.len(),
-            rows * cols,
+            expected_len,
             "Grid: cells.len() must equal rows * cols"
         );
         Self { rows, cols, cells }
@@ -84,6 +92,13 @@ mod tests {
     #[should_panic(expected = "cells.len() must equal rows * cols")]
     fn new_rejects_mismatched_cell_count() {
         let _ = Grid::new(2, 2, vec![1, 2, 3]);
+    }
+
+    #[test]
+    #[should_panic(expected = "rows * cols overflowed usize")]
+    fn new_rejects_overflowing_dimensions() {
+        // レビュー指摘: rows * cols の乗算オーバーフローで assert_eq! をすり抜けないことを確認する。
+        let _: Grid<i32> = Grid::new(usize::MAX, 2, vec![]);
     }
 
     #[test]

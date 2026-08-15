@@ -49,7 +49,7 @@ pub struct FontInfo {
     pub bold: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Cell {
     pub value: CellValue,
     /// 列幅（文字数換算）。
@@ -105,9 +105,21 @@ fn format_number(n: f64, format_code: Option<&str>) -> String {
     formatted
 }
 
+/// `format!("{value:.N$}")`に渡す小数点以下桁数の上限。`f64`の有効桁数（約17桁）を
+/// 大きく超える桁数を指定してもゼロ埋めが増えるだけで意味がなく、悪意ある/破損した
+/// `.xlsx`が極端に長い表示形式コード（例: `0`が数万文字連続する文字列）を埋め込んで
+/// 巨大な文字列確保によるメモリ枯渇 (DoS) を引き起こすことを防ぐガード
+/// （docs/security/design-review.md #2と同種の「入力ファイルの内容に起因するリソース
+/// 消費を上限で防ぐ」方針に従う）。
+const MAX_DECIMAL_PLACES: usize = 20;
+
 fn count_decimal_places(code: &str) -> usize {
     match code.split_once('.') {
-        Some((_, frac)) => frac.chars().take_while(|c| *c == '0' || *c == '#').count(),
+        Some((_, frac)) => frac
+            .chars()
+            .take_while(|c| *c == '0' || *c == '#')
+            .count()
+            .min(MAX_DECIMAL_PLACES),
         None => 0,
     }
 }
@@ -214,7 +226,11 @@ fn render_date_tokens(d: NaiveDateTime, code: &str) -> String {
                     out.push_str(&d.month().to_string());
                 }
             }
-            other => out.push(other),
+            other => {
+                for _ in 0..run_len {
+                    out.push(other);
+                }
+            }
         }
         i += run_len;
     }
@@ -275,6 +291,18 @@ mod tests {
     }
 
     #[test]
+    fn number_format_with_excessive_decimal_places_is_capped() {
+        // レビュー指摘: 小数点以下の`0`が極端に長い(悪意ある/破損した)number_formatを
+        // そのまま`format!("{value:.N$}")`に渡すと、Nに比例した巨大な文字列を
+        // 確保してしまう(DoSリスク)。MAX_DECIMAL_PLACESでクランプされることを確認する。
+        let huge_format = format!("0.{}", "0".repeat(100_000));
+        let c = cell(CellValue::Number(1.5), Some(&huge_format));
+        let text = c.display_text();
+        assert_eq!(text.len(), "1.".len() + MAX_DECIMAL_PLACES);
+        assert!(text.starts_with("1.5"));
+    }
+
+    #[test]
     fn number_negative_thousands_separator() {
         let c = cell(CellValue::Number(-1234.5), Some("#,##0.0"));
         assert_eq!(c.display_text(), "-1,234.5");
@@ -309,5 +337,17 @@ mod tests {
             .unwrap();
         let c = cell(CellValue::Date(dt), Some("mm/dd hh:mm"));
         assert_eq!(c.display_text(), "03/01 14:07");
+    }
+
+    #[test]
+    fn date_preserves_repeated_literal_separators() {
+        // レビュー指摘: `render_date_tokens`のリテラル文字（トークン以外）分岐は
+        // 連続した同一文字（例: `--`）の2文字目以降を読み飛ばすバグがあった。
+        let dt = NaiveDate::from_ymd_opt(2026, 8, 15)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap();
+        let c = cell(CellValue::Date(dt), Some("yyyy--mm--dd"));
+        assert_eq!(c.display_text(), "2026--08--15");
     }
 }

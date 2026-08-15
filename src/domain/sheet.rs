@@ -1,5 +1,6 @@
 use super::{Cell, Grid};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MergeRange {
     pub row_start: usize,
     pub row_end: usize, // inclusive
@@ -20,6 +21,7 @@ impl MergeRange {
 /// `merges`の各`MergeRange`は`cells`の範囲内に収まっていることを前提とするが、
 /// この不変条件は`Sheet`自身は検証せず、Readerが`Sheet`を構築する時点で担保する契約
 /// とする（docs/design/domain/sheet.md 3章）。
+#[derive(Debug, Clone, PartialEq)]
 pub struct Sheet {
     pub name: String,
     pub cells: Grid<Cell>,
