@@ -126,6 +126,19 @@ pub struct CliArgs {
 - **フォールバックマージン**:
   - `affinity_fallback_margin` は、デフォルト値の `0.05` を適用する。
 
+`StrategyConfig`/`StrategyRegistry`への参照パスは、本節を含む本ドキュメント全体・6章の
+コード例では当初`analysis::registry::StrategyConfig`としていたが、`analysis::registry`は
+[analysis/mod.md 2章](analysis/mod.md#2-設計方針)の方針により`analysis`外部に公開しない
+private moduleであり、`cli`層（`analysis`の外）からは到達できない。実際に`cli`/`lib.rs`から
+参照できるのは`analysis/mod.rs`が再エクスポートする`analysis::StrategyConfig`/
+`analysis::StrategyRegistry`のみのため、実装ではこちらのパスに統一した
+（[analysis/strategies/mod.md](analysis/strategies/mod.md)で`strategies`モジュールの
+可視性を`pub(in crate::analysis)`に修正したのと同種の、モジュール外部からの到達可能性に
+関する実装時の補正）。`overflow_threshold`以外のフィールドは`StrategyConfig::default()`から
+構造体更新構文（`..StrategyConfig::default()`）で引き継ぐため、`grid_paper_weights`/
+`tabular_weights`の具体的な型（`analysis::strategies::grid_paper::Weights`等、`analysis`
+内部にのみ公開）を`cli`層が直接名指しする必要はない。
+
 ### 3.2. `OutputTarget` の構築とタイムスタンプ・クリーンアップ
 
 [renderer/output.md 6章](renderer/output.md#6-cliとの境界) の設計方針に基づき、パスの決定とタイムスタンプの付与は `cli.rs`/`main.rs` (呼び出し側) で確定させ、`OutputTarget` を構築する。
@@ -232,7 +245,7 @@ pub struct ConvertConfig {
     pub input_path: PathBuf,
     pub sheet_names: Vec<String>,
     pub strategy_id: String,
-    pub strategy_config: analysis::registry::StrategyConfig,
+    pub strategy_config: analysis::StrategyConfig,
     pub output_target: renderer::OutputTarget,
     /// 1シートあたりに許容する最大セル数（`--max-cells`、[3.4節](#34-max_cells-のマッピングと入力ファイルサイズの上限)参照）。
     pub max_cells: usize,
@@ -295,7 +308,7 @@ pub fn convert(config: ConvertConfig) -> Result<(), ConvertError> {
     };
 
     // 4. StrategyRegistry の初期化
-    let registry = analysis::registry::StrategyRegistry::with_config(config.strategy_config);
+    let registry = analysis::StrategyRegistry::with_config(config.strategy_config);
 
     // 5. 各シートの変換処理 (Analyzer)
     let mut documents = Vec::new();
@@ -329,7 +342,7 @@ pub fn convert(config: ConvertConfig) -> Result<(), ConvertError> {
 
 ```rust
 use crate::ConvertConfig;
-use crate::analysis::registry::StrategyConfig;
+use crate::analysis::StrategyConfig;
 use crate::renderer::OutputTarget;
 use std::path::PathBuf;
 

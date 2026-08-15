@@ -45,6 +45,7 @@
 ## 4. 公開API
 
 ```rust
+#[derive(Debug)]
 pub enum OutputTarget {
     Stdout,
     SingleFile(std::path::PathBuf),
