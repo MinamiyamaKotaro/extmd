@@ -420,3 +420,20 @@ impl AnalysisStrategy for TabularStrategy {
   よる可視性制限とdocstringで明文化する
   （[analysis/metrics.md 4章](analysis/metrics.md#4-可視性の設計-pub--pubin-crateanalysis)、
   [Issue #6でのレビュー議論](https://github.com/MinamiyamaKotaro/extmd/issues/6#issuecomment-5301796041)を反映）
+
+[Issue #8](https://github.com/MinamiyamaKotaro/extmd/issues/8)での検討により、要件定義書8章
+項目3「出力の粒度」は[renderer設計書](renderer/mod.md)側で確定した。デフォルトは複数シートを
+1つのMarkdown（ファイル指定時 or 標準出力）へ、シート名をH1見出しとして連結する
+`OutputTarget::Stdout`/`SingleFile`とし、シートごとの分割出力（`OutputTarget::SplitDirectory`）
+はCLI側の明示指定時のみ使う（[renderer/mod.md 5章](renderer/mod.md#5-シート見出しレベルと本文見出しレベルの階層関係heading_offset)、
+[renderer/output.md](renderer/output.md)）。具体的なCLIフラグ名は`cli.rs`の設計フェーズで確定する
+（[renderer/output.md 6章「CLIとの境界」](renderer/output.md#6-cliとの境界)。
+[analysis/registry.md 5章](analysis/registry.md#5-cliとの境界)と同じ考え方）。
+
+本設計（rendererの詳細設計）を経て、要件定義書8章に以下の項目が新たに追加された:
+
+- **出力先クリーンアップオプションの要否**: `SplitDirectory`出力時、既存の同名ファイルは
+  上書きするが、無関係な既存ファイル・削除/リネームされたシートの残骸ファイルは自動削除しない
+  （[Issue #8での決定](https://github.com/MinamiyamaKotaro/extmd/issues/8#issuecomment-5301948782)）。
+  クリーンアップを行いたい場合のオプション（例: `--clean`）の提供要否は未確定
+  （[renderer/output.md 7章](renderer/output.md#7-未確定事項)）。
