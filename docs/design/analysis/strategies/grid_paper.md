@@ -82,7 +82,7 @@ fn detect_overflow(&self, ctx: &OverflowContext) -> OverflowDecision {
 ```
 
 要件定義書5.3.2「推定描画幅を使い切るまで、または空でないセルに到達するまで」に対応する。
-`following_empty_cells`は呼び出し元（[mod.md 4章](../mod.md#4-行単位のオーケストレーション-はみ出し・ネイティブ結合・見出し判定)の
+`following_empty_cells`は呼び出し元（[mod.md 4章](../mod.md#4-行単位のオーケストレーション-はみ出しネイティブ結合見出し判定)の
 `resolve_blocks`）が既に「右隣から連続する空セル」のみに絞って渡すため、この関数自身は
 「空でないセルに到達したら止める」判定を明示的に行う必要はない（スライスの境界が
 そのまま停止条件になる）。

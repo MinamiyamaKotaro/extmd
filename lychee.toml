@@ -1,0 +1,19 @@
+# lychee (https://github.com/lycheeverse/lychee) の共通設定。
+# ローカル実行時 (`lychee --config lychee.toml ...`) とCI (.github/workflows/docs-check.yml)
+# の両方から参照する。
+
+# Markdownの見出しアンカー（相対リンクの `#見出し` 部分）もGitHub互換のスラグ生成規則で検証する。
+# ローカルの設計書間リンクの検証が主目的。
+include_fragments = "anchor-only"
+
+no_progress = true
+
+# GitHub Issue/PRの個別コメントへのパーマリンク（#issuecomment-XXXXXXX）はフラグメント
+# 検証の対象から除外する。コメント一覧はページ側でJS描画される場合がありlycheeの静的HTML
+# 取得では正しく検出できず誤検知（false positive）になりやすいため。リンク先ページ自体
+# （Issue/PR）の存在チェックは`exclude`せず引き続き行いたいが、lycheeはURL単位でしか
+# 除外できないため、コメントパーマリンク全体を対象外とする。
+exclude = [
+  '^https://github\.com/.+/issues/\d+#issuecomment-\d+$',
+  '^https://github\.com/.+/pull/\d+#issuecomment-\d+$',
+]

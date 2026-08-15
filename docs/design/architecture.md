@@ -231,6 +231,7 @@ impl AnalysisStrategy for TabularStrategy {
 pub struct MeetingMinutesStrategy(GridPaperStrategy);
 pub struct ApplicationFormStrategy(GridPaperStrategy);
 ```
+
 のように `GridPaperStrategy` を委譲先として持ち、`affinity` と一部メソッドだけ
 上書きする実装も可とする。
 

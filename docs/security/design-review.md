@@ -42,7 +42,7 @@ Medium/Medium-High（1・2・5）は[Issue #14](https://github.com/MinamiyamaKot
 ### 詳細
 
 [renderer/escape.md](../design/renderer/escape.md)の`escape_table_cell`/`escape_flow_text`は、
-Markdown記法と衝突する文字（`\ * _ \` [ ] #` ・パイプ・改行）のみをエスケープし、
+Markdown記法と衝突する文字（`` \ * _ ` [ ] # `` ・パイプ・改行）のみをエスケープし、
 HTMLの特殊文字（`<` `>` `&`）は一切変換しない設計になっている。
 
 ```rust

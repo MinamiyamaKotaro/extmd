@@ -1,0 +1,47 @@
+name: Docs Check
+
+# ドキュメント（Markdown）中心のリポジトリのため、PRで変更されたMarkdownファイルのみを
+# 対象にLintとリンク切れチェックを行う。push時は実行しない。
+on:
+  pull_request:
+    paths:
+      - "**/*.md"
+
+concurrency:
+  group: docs-check-${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  markdown:
+    name: Markdown lint & link check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Get changed markdown files
+        id: changed-files
+        uses: tj-actions/changed-files@v47
+        with:
+          files: |
+            **/*.md
+
+      - name: Lint changed markdown files
+        if: steps.changed-files.outputs.any_changed == 'true'
+        uses: DavidAnson/markdownlint-cli2-action@v24
+        with:
+          globs: ${{ steps.changed-files.outputs.all_changed_files }}
+
+      - name: Check links in changed markdown files
+        if: steps.changed-files.outputs.any_changed == 'true'
+        uses: lycheeverse/lychee-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          args: >-
+            --config lychee.toml
+            ${{ steps.changed-files.outputs.all_changed_files }}
+          fail: true
