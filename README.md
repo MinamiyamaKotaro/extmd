@@ -22,6 +22,7 @@ extmdは、セルからはみ出して表示されている文字列を検出し
 
 - [要件定義書](docs/requirement/requirements.md)
 - [アーキテクチャ設計書](docs/design/architecture.md)
+- [ドメイン設計書](docs/design/domain/mod.md)
 
 ## 使い方（予定）
 
@@ -45,10 +46,13 @@ extmd/
 │   ├── main.rs              # バイナリエントリポイント。cli.rsをパースしてlib.rsを呼ぶだけ
 │   ├── lib.rs                # 公開API（convert()等）。テストや他クレートからの利用を想定
 │   ├── cli.rs                 # clapによるCLI引数定義（--strategy, --sheet, -o など）
-│   ├── domain/                # コアドメイン型（要件と無関係にどの層からも参照される）
+│   ├── domain/                # コアドメイン型。他のどの層にも依存しない最下層（docs/design/domain/参照）
 │   │   ├── mod.rs
-│   │   ├── sheet.rs             # Sheet, Cell, MergeRange
-│   │   └── block.rs             # Block, RowKind, BlockSource
+│   │   ├── cell.rs               # CellValue, Alignment, FontInfo, Cell
+│   │   ├── grid.rs                # Grid<T>（行優先フラット2次元配列）
+│   │   ├── sheet.rs                # Sheet, MergeRange
+│   │   ├── block.rs                 # Block, BlockSource
+│   │   └── document.rs               # RowKind, ResolvedRow, RenderedRow, Document
 │   ├── reader/                 # [1] Reader: xlsxファイル → Sheet
 │   │   ├── mod.rs
 │   │   └── xlsx.rs
@@ -77,7 +81,7 @@ extmd/
 
 | ディレクトリ | 設計書の該当箇所 |
 |---|---|
-| `domain/` | 3. コアドメイン型 |
+| `domain/` | アーキテクチャ設計書 3. コアドメイン型 / [ドメイン設計書](docs/design/domain/mod.md)全体（`src/domain/`の各ファイルに`docs/design/domain/`の各mdファイルが対応） |
 | `analysis/strategy.rs` | 4. `AnalysisStrategy` トレイト |
 | `analysis/strategies/` | 5. 具体的な戦略実装 |
 | `analysis/registry.rs` | 6. 戦略の選択（`StrategySelector`） |
