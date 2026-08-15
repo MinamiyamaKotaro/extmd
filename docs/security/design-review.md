@@ -21,15 +21,17 @@ CLIツール」（[要件定義書6章](../requirement/requirements.md#6-非機�
 
 ## サマリー
 
-| # | 脆弱性の種類 | リスクレベル | 対象設計書 |
-|---|---|---|---|
-| 1 | 出力Markdownへの生HTML混入によるストアド型インジェクション (Stored XSS相当) | Medium | [renderer/escape.md](../design/renderer/escape.md) |
-| 2 | 入力ファイルサイズ・展開後セル数の上限なしによるリソース枯渇 (DoS) | Medium-High | [reader/xlsx.md](../design/reader/xlsx.md), [reader/grid_builder.md](../design/reader/grid_builder.md) |
-| 3 | スプレッドシート再取込み時の数式インジェクション (CSV/Formula Injection) | Low | [renderer/escape.md](../design/renderer/escape.md), [renderer/table.md](../design/renderer/table.md) |
-| 4 | 出力ファイル名サニタイズが制御文字・Unicode方向操作文字を考慮していない | Low | [renderer/output.md](../design/renderer/output.md) |
-| 5 | XML/ZIPパーサ依存によるサプライチェーンリスク（XXE・zip bomb耐性が未検証） | Medium | [reader/mod.md](../design/reader/mod.md) |
-| 6 | エラーメッセージによる内部情報の断片的な漏洩 | Low | [cli.md 5章](../design/cli.md#5-エラーハンドリングと終了コード) |
-| 7 | `--clean`・書き込み処理のシンボリックリンク追従 | Low | [cli.md 3.2節](../design/cli.md#32-outputtarget-の構築とタイムスタンプクリーンアップ), [renderer/output.md](../design/renderer/output.md) |
+| # | 脆弱性の種類 | リスクレベル | 対象設計書 | 対応状況 |
+|---|---|---|---|---|
+| 1 | 出力Markdownへの生HTML混入によるストアド型インジェクション (Stored XSS相当) | Medium | [renderer/escape.md](../design/renderer/escape.md) | 反映済み |
+| 2 | 入力ファイルサイズ・展開後セル数の上限なしによるリソース枯渇 (DoS) | Medium-High | [reader/xlsx.md](../design/reader/xlsx.md), [reader/grid_builder.md](../design/reader/grid_builder.md) | 反映済み（残存リスクは明記） |
+| 3 | スプレッドシート再取込み時の数式インジェクション (CSV/Formula Injection) | Low | [renderer/escape.md](../design/renderer/escape.md), [renderer/table.md](../design/renderer/table.md) | 未対応（Low、別Issueで検討） |
+| 4 | 出力ファイル名サニタイズが制御文字・Unicode方向操作文字を考慮していない | Low | [renderer/output.md](../design/renderer/output.md) | 未対応（Low、別Issueで検討） |
+| 5 | XML/ZIPパーサ依存によるサプライチェーンリスク（XXE・zip bomb耐性が未検証） | Medium | [reader/mod.md](../design/reader/mod.md) | 反映済み（CI監査は未着手） |
+| 6 | エラーメッセージによる内部情報の断片的な漏洩 | Low | [cli.md 5章](../design/cli.md#5-エラーハンドリングと終了コード) | 未対応（Low、別Issueで検討） |
+| 7 | `--clean`・書き込み処理のシンボリックリンク追従 | Low | [cli.md 3.2節](../design/cli.md#32-outputtarget-の構築とタイムスタンプクリーンアップ), [renderer/output.md](../design/renderer/output.md) | 未対応（Low、別Issueで検討） |
+
+Medium/Medium-High（1・2・5）は[Issue #14](https://github.com/MinamiyamaKotaro/extmd/issues/14)での検討を経て設計書に反映済み。Low評価の4件（3・4・6・7）はIssue #14のスコープ外としており、対応する場合は別途Issueを起票する。
 
 ---
 
@@ -80,8 +82,12 @@ CommonMark/GFMをはじめ多くのMarkdown実装は、素通しした生HTMLタ
   「出力Markdownは生HTMLを含みうるため、信頼できない入力ファイルを変換した
   `.md`を、HTMLサニタイズを行わない環境でレンダリングしない」という
   利用上の注意を明記する。
-- [renderer/escape.md 4章「未確定事項」](../design/renderer/escape.md#4-未確定事項)に、
+- [renderer/escape.md 5章「未確定事項」](../design/renderer/escape.md#5-未確定事項)に、
   エスケープ対象文字セットの検討項目としてHTML特殊文字を追加することを推奨する。
+
+**対応状況**: [Issue #14](https://github.com/MinamiyamaKotaro/extmd/issues/14)での検討を経て、
+[renderer/escape.md 2〜4章](../design/renderer/escape.md#2-escape_table_cell)に
+`&` `<` `>` のエスケープ（置換順序含む）を反映済み。
 
 ---
 
@@ -131,6 +137,15 @@ CommonMark/GFMをはじめ多くのMarkdown実装は、素通しした生HTMLタ
 - これらの上限値はハードコードせず、[analysis/registry.md](../design/analysis/registry.md)の
   `StrategyConfig`と同様に将来的に調整可能な形にすることを検討する。
 
+**対応状況**: [Issue #14](https://github.com/MinamiyamaKotaro/extmd/issues/14)での検討を経て、
+[reader/mod.md 5章](../design/reader/mod.md#5-readererror-と公開api)に`ReaderError::SheetTooLarge`、
+[reader/xlsx.md 3章](../design/reader/xlsx.md#3-列数0のシートの扱い)に`max_cells`超過時の
+早期拒否、[cli.md](../design/cli.md)に`--max-cells`オプションを反映済み。ただしZIP展開・
+XMLパース段階そのもの（`max_cells`チェックに到達する前）のリソース枯渇は、
+現行ライブラリ構成では完全には防げない残存リスクとして
+[reader/mod.md 4.1章](../design/reader/mod.md#41-依存ライブラリのセキュリティ検証と監査方針)に
+明記した（3章のZIPボム関連の指摘も参照）。
+
 ---
 
 ## 3. スプレッドシート再取込み時の数式インジェクション (CSV/Formula Injection)
@@ -164,7 +179,7 @@ Markdownテーブルであるため、実際に悪用可能かは貼り付け方
 - 優先度は低いが、`escape_table_cell`/`escape_flow_text`のセル値が
   `= + - @` で始まる場合に先頭へゼロ幅文字やシングルクォートを付与しない
   （Markdown表示が崩れるため）代わりに、[要件定義書8章「未確定事項」](../requirement/requirements.md)
-  または[renderer/escape.md 4章](../design/renderer/escape.md#4-未確定事項)に
+  または[renderer/escape.md 5章](../design/renderer/escape.md#5-未確定事項)に
   「既知の制約」として記載し、readmeで「変換結果を再度スプレッドシートに
   貼り付ける場合は数式解釈に注意する」旨を注記することを推奨する。
 
@@ -244,6 +259,13 @@ Zip Slip（展開先パストラバーサル、本ツールでは直接該当し
   （現時点でCI設計書が存在しないため、CLI設計書または別途CI設計書での
   記載を推奨）。
 - 依存クレートのバージョンアップ方針（Dependabot等）についても同様に明記を推奨する。
+
+**対応状況**: [Issue #14](https://github.com/MinamiyamaKotaro/extmd/issues/14)での検討を経て、
+`umya-spreadsheet`の実依存（`quick-xml`/`zip`クレート、実ソースコードで確認済み）を踏まえ、
+[reader/mod.md 4.1章](../design/reader/mod.md#41-依存ライブラリのセキュリティ検証と監査方針)に
+XXE耐性の根拠（推論である旨を明示）とZip Bombに対する残存リスク・多層防御方針を反映済み。
+`cargo audit`/`cargo deny`のCI導入は引き続き未着手であり、実装フェーズでのCI設計時に
+別途対応が必要。
 
 ---
 
