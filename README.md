@@ -5,8 +5,8 @@ Excelファイル（.xlsx）をMarkdownに変換するCLIツール（Rust製）�
 > **ステータス: 実装中。** 設計（要件定義・アーキテクチャ設計・詳細設計・セキュリティレビュー）は
 > 完了し、[Issue #17](https://github.com/MinamiyamaKotaro/extmd/issues/17)に基づき
 > `docs/design/architecture.md`のパイプライン順（domain → reader → analysis → renderer → cli）で
-> 実装を進めています。現時点では`domain`層・`reader`層・`analysis`層が実装済みで、CLIとして
-> 動作する状態にはまだ達していません。
+> 実装を進めています。現時点では`domain`層・`reader`層・`analysis`層・`renderer`層が実装済みで、
+> CLIとして動作する状態にはまだ達していません。
 
 ## 特徴
 
@@ -54,15 +54,15 @@ extmdをそのまま呼び出す等）での利用は、悪意あるファイル
 [アーキテクチャ設計書](docs/design/architecture.md)のパイプライン
 （Reader → StrategySelector → Analyzer → Renderer）にそのまま対応させた構成にしています。
 CLI（`main.rs`）はライブラリ（`lib.rs`）を薄く呼び出すだけにし、変換ロジック本体を
-`main.rs`を経由せずに単体テストできるようにします。`domain/`・`reader/`・`analysis/`は実装済み、
-それ以外（`renderer/`・`cli.rs`・`main.rs`）は[Issue #17](https://github.com/MinamiyamaKotaro/extmd/issues/17)で今後実装予定です。
+`main.rs`を経由せずに単体テストできるようにします。`domain/`・`reader/`・`analysis/`・
+`renderer/`は実装済み、それ以外（`cli.rs`・`main.rs`）は[Issue #17](https://github.com/MinamiyamaKotaro/extmd/issues/17)で今後実装予定です。
 
 ```
 extmd/
 ├── Cargo.toml
 ├── src/
 │   ├── main.rs              # (未実装) バイナリエントリポイント。cli::build_config()を呼び、extmd::convert()を実行するだけ
-│   ├── lib.rs                # 公開API。現状はpub mod analysis; pub mod domain; pub mod reader;のみ（convert()等はcli実装時に追加）
+│   ├── lib.rs                # 公開API。現状はpub mod analysis; pub mod domain; pub mod reader; pub mod renderer;のみ（convert()等はcli実装時に追加）
 │   ├── cli.rs                 # (未実装) clapによるCLI引数定義（--strategy, --sheet, -o, --split, --clean等）とConvertConfigへの変換（docs/design/cli.md参照）
 │   ├── domain/                # 実装済み。コアドメイン型。他のどの層にも依存しない最下層（docs/design/domain/参照）
 │   │   ├── mod.rs
@@ -88,8 +88,8 @@ extmd/
 │   │       ├── mod.rs
 │   │       ├── grid_paper.rs        # GridPaperStrategy（デフォルト、方眼紙向け）
 │   │       └── tabular.rs           # TabularStrategy（通常の集計表向け）
-│   └── renderer/                # (未実装) [4] Renderer: Document → Markdown文字列
-│       ├── mod.rs
+│   └── renderer/                # 実装済み。[4] Renderer: Document → Markdown文字列（docs/design/renderer/参照）
+│       ├── mod.rs                 # render()公開API、OutputTarget、heading_offset算出、Documentの本文組み立て
 │       ├── flow.rs                # RowKind::Flow行の変換（段落・見出し）
 │       ├── table.rs               # RowKind::TableRow行のMarkdownパイプテーブル変換
 │       ├── escape.rs              # Markdown特殊文字のエスケープ
@@ -124,7 +124,7 @@ extmd/
    - [x] `domain`層
    - [x] `reader`層
    - [x] `analysis`層
-   - [ ] `renderer`層
+   - [x] `renderer`層
    - [ ] `cli`（`main.rs`/`cli.rs`/`lib.rs`公開API）
 
 ## ライセンス

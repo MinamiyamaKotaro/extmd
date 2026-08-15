@@ -31,7 +31,12 @@
   「RendererはStrategyに依存しない」方針の通り、`analysis`には一切依存しない。
 - [analysis/mod.md 2章](../analysis/mod.md#2-設計方針)と同様、内部モジュール
   （`flow.rs`/`table.rs`/`escape.rs`/`output.rs`）は`renderer`外部に直接公開しない。
-  外部から見えるのは本ファイルの公開API（4章）のみとする。
+  外部から見えるのは本ファイルの公開API（4章）のみとする。各ファイルの設計書（[flow.md](flow.md)/
+  [table.md](table.md)/[escape.md](escape.md)/[output.md](output.md)）のコード例では
+  モジュール間の関数を`pub(crate)`としていたが、これだと`main.rs`等`renderer`の外から
+  直接到達できてしまい本方針と矛盾するため、実装では`pub(in crate::renderer)`を採用し
+  `renderer`部分木の外には公開されないようにした（[analysis/strategies/mod.md](../analysis/strategies/mod.md)の
+  `pub(in crate::analysis)`と同じ考え方）。
 - `output.rs`はCLIフラグの意味論（`--split`の有無や`-o`の値の解釈、タイムスタンプ付与オプション等）
   を一切持たない。CLI引数から具体的な出力先を組み立てる処理は`renderer`層の外
   （`cli.rs`/`lib.rs`）の責務とする（[analysis/registry.md 5章「CLIとの境界」](../analysis/registry.md#5-cliとの境界)と

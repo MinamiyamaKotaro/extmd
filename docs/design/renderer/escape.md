@@ -12,7 +12,7 @@
 ## 2. `escape_table_cell`
 
 ```rust
-pub(crate) fn escape_table_cell(text: &str) -> String {
+pub(in crate::renderer) fn escape_table_cell(text: &str) -> String {
     // 置換順序が重要（先に適用した置換が生成した文字を、後続の置換が誤って
     // 再エスケープ/破壊しないようにするため）:
     // 1. `&` → `&amp;`: `<`/`>`のエスケープより先に行わないと、
@@ -41,7 +41,7 @@ pub(crate) fn escape_table_cell(text: &str) -> String {
 ## 3. `escape_flow_text`
 
 ```rust
-pub(crate) fn escape_flow_text(text: &str) -> String {
+pub(in crate::renderer) fn escape_flow_text(text: &str) -> String {
     let mut escaped = String::with_capacity(text.len());
     for c in text.chars() {
         // バックスラッシュを含む制御文字は `\` を前置してエスケープする。

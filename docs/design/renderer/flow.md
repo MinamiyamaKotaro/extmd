@@ -12,7 +12,7 @@
 ## 2. 変換アルゴリズム
 
 ```rust
-pub(crate) fn render_row(row: &domain::RenderedRow, heading_offset: u8) -> String {
+pub(in crate::renderer) fn render_row(row: &domain::RenderedRow, heading_offset: u8) -> String {
     row.blocks
         .iter()
         .map(|block| render_block(block, heading_offset))
