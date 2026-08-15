@@ -2,11 +2,9 @@
 
 Excelファイル（.xlsx）をMarkdownに変換するCLIツール（Rust製）。
 
-> **ステータス: 実装中。** 設計（要件定義・アーキテクチャ設計・詳細設計・セキュリティレビュー）は
-> 完了し、[Issue #17](https://github.com/MinamiyamaKotaro/extmd/issues/17)に基づき
-> `docs/design/architecture.md`のパイプライン順（domain → reader → analysis → renderer → cli）で
-> 実装を進めています。現時点では`domain`層・`reader`層・`analysis`層・`renderer`層が実装済みで、
-> CLIとして動作する状態にはまだ達していません。
+> **ステータス: v1実装完了。** 設計（要件定義・アーキテクチャ設計・詳細設計・セキュリティレビュー）
+> から[Issue #17](https://github.com/MinamiyamaKotaro/extmd/issues/17)に基づく実装
+> （domain → reader → analysis → renderer → cli）まで完了し、CLIとして動作します。
 
 ## 特徴
 
@@ -32,12 +30,19 @@ extmdは、セルからはみ出して表示されている文字列を検出し
 - [CLI設計書](docs/design/cli.md)
 - [セキュリティ設計レビュー](docs/security/design-review.md)
 
-## 使い方（予定）
+## 使い方
 
-実装完了後、以下のようなCLIを想定しています（詳細は要件定義書 5.1節を参照）。
+詳細なCLIオプション一覧は`extmd --help`、または[CLI設計書](docs/design/cli.md)を参照してください。
 
 ```sh
-extmd input.xlsx --strategy auto -o output.md
+# 標準出力へ変換結果を出力（戦略は自動判定）
+extmd input.xlsx
+
+# ファイルへ出力し、戦略を明示指定
+extmd input.xlsx --strategy grid-paper -o output.md
+
+# シートごとに別ファイルへ分割出力
+extmd input.xlsx --split -o output_dir
 ```
 
 ## 利用上の注意
@@ -54,16 +59,15 @@ extmdをそのまま呼び出す等）での利用は、悪意あるファイル
 [アーキテクチャ設計書](docs/design/architecture.md)のパイプライン
 （Reader → StrategySelector → Analyzer → Renderer）にそのまま対応させた構成にしています。
 CLI（`main.rs`）はライブラリ（`lib.rs`）を薄く呼び出すだけにし、変換ロジック本体を
-`main.rs`を経由せずに単体テストできるようにします。`domain/`・`reader/`・`analysis/`・
-`renderer/`は実装済み、それ以外（`cli.rs`・`main.rs`）は[Issue #17](https://github.com/MinamiyamaKotaro/extmd/issues/17)で今後実装予定です。
+`main.rs`を経由せずに単体テストできるようにします。全レイヤー実装済みです。
 
 ```
 extmd/
 ├── Cargo.toml
 ├── src/
-│   ├── main.rs              # (未実装) バイナリエントリポイント。cli::build_config()を呼び、extmd::convert()を実行するだけ
-│   ├── lib.rs                # 公開API。現状はpub mod analysis; pub mod domain; pub mod reader; pub mod renderer;のみ（convert()等はcli実装時に追加）
-│   ├── cli.rs                 # (未実装) clapによるCLI引数定義（--strategy, --sheet, -o, --split, --clean等）とConvertConfigへの変換（docs/design/cli.md参照）
+│   ├── main.rs              # 実装済み。薄いバイナリエントリポイント。cli::build_config()を呼び、extmd::convert()を実行するだけ
+│   ├── lib.rs                # 実装済み。公開API: convert()、ConvertConfig、ConvertError(docs/design/cli.md 6.1節参照)
+│   ├── cli.rs                 # 実装済み。clapによるCLI引数定義（--strategy, --sheet, -o, --split, --clean等）とConvertConfigへの変換（docs/design/cli.md参照）
 │   ├── domain/                # 実装済み。コアドメイン型。他のどの層にも依存しない最下層（docs/design/domain/参照）
 │   │   ├── mod.rs
 │   │   ├── cell.rs               # CellValue, Alignment, FontInfo, Cell
@@ -96,7 +100,7 @@ extmd/
 │       └── output.rs              # OutputTargetに基づく書き込み・ファイル名サニタイズ
 ├── tests/
 │   ├── reader.rs                # readerの結合テスト（umya-spreadsheetの実writer/readerを介した往復検証）
-│   └── fixtures/                # (未実装) 方眼紙/通常表のサンプルxlsx
+│   └── cli.rs                   # CLI全体の結合テスト（コンパイル済みバイナリを実際に起動して検証）
 └── docs/
     ├── requirement/
     ├── design/
@@ -111,6 +115,7 @@ extmd/
 | `reader/` | アーキテクチャ設計書 2. パイプライン全体像 `[1] Reader` / [Reader設計書](docs/design/reader/mod.md)全体（`src/reader/`の各ファイルに`docs/design/reader/`の各mdファイルが対応） |
 | `analysis/` | アーキテクチャ設計書 2. パイプライン全体像 `[2]+[3]` StrategySelector/Analyzer / [Analysis設計書](docs/design/analysis/mod.md)全体（`src/analysis/`の各ファイルに`docs/design/analysis/`の各mdファイルが対応） |
 | `renderer/` | アーキテクチャ設計書 2. パイプライン全体像 `[4]` Renderer / [Renderer設計書](docs/design/renderer/mod.md)全体（`src/renderer/`の各ファイルに`docs/design/renderer/`の各mdファイルが対応） |
+| `cli.rs`/`main.rs`/`lib.rs` | [CLI設計書](docs/design/cli.md)全体（引数定義・`ConvertConfig`への変換・`reader`→`analysis`→`renderer`パイプラインの結合実行） |
 
 新しいドメイン戦略を追加する際は `analysis/strategies/` に1ファイル追加するだけで、
 既存モジュールへの変更が不要になることを意図した構成です（設計書7章）。
@@ -120,12 +125,12 @@ extmd/
 1. 要件定義（完了）
 2. アーキテクチャ設計・詳細設計（完了）
 3. セキュリティ観点の整理（完了、[セキュリティ設計レビュー](docs/security/design-review.md)）
-4. 実装・テスト（進行中、[Issue #17](https://github.com/MinamiyamaKotaro/extmd/issues/17)）
+4. 実装・テスト（完了、[Issue #17](https://github.com/MinamiyamaKotaro/extmd/issues/17)）
    - [x] `domain`層
    - [x] `reader`層
    - [x] `analysis`層
    - [x] `renderer`層
-   - [ ] `cli`（`main.rs`/`cli.rs`/`lib.rs`公開API）
+   - [x] `cli`（`main.rs`/`cli.rs`/`lib.rs`公開API）
 
 ## ライセンス
 

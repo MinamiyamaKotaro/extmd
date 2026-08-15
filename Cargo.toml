@@ -5,11 +5,9 @@ edition = "2021"
 description = "Excel (.xlsx) to Markdown converter with overflow-cell merging support."
 license = "MIT"
 
-# `src/main.rs`（CLIバイナリ）はcli実装後、別PRで追加する
-# （docs/design/cli.md 1章「責務分担」参照）。このPRはdomain/reader層のみを追加するため、
-# ライブラリターゲットのみを持つ。
-
 [dependencies]
 chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
 umya-spreadsheet = "3.0"
 log = "0.4"
+clap = { version = "4", features = ["derive"] }
+env_logger = "0.11"

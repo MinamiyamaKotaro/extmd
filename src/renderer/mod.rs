@@ -11,6 +11,7 @@ mod table;
 
 use crate::domain;
 
+#[derive(Debug)]
 pub enum OutputTarget {
     Stdout,
     SingleFile(std::path::PathBuf),
