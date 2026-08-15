@@ -31,7 +31,7 @@
   I/O・ヒューリスティック計算・戦略選択といったロジックは一切持たない。
 - 上記方針の帰結として、アーキテクチャ設計書 6.1.1で当初示していた
   `Sheet { metrics_cache: OnceCell<SheetMetrics>, .. }` は撤回する
-  （理由は4章「architecture.mdからの変更点」を参照）。
+  （理由は5章「architecture.mdからの変更点」を参照）。
 
 ## 3. 座標の表現（`RowIndex`/`ColIndex`の検討）
 

@@ -62,3 +62,23 @@ RenderedRow (kind: RowKind, blocks: Vec<Block>)
   ▼
 Document (Renderer への入力)
 ```
+
+## 5. `ResolvedRow`（借用）→`RenderedRow`（所有）間で`clone`は発生しない
+
+一見、`ResolvedRow<'a> { blocks: &'a [Block] }` から `RenderedRow { blocks: Vec<Block> }` を
+作る際に `Block`（`text: String` を含む）の `clone()` が必要に思えるが、**実際には不要**。
+Analyzerの実装は以下のパターンになる想定で、NLL（non-lexical lifetimes）により
+`resolved` の借用は `classify_row` 呼び出しの直後で終了するため、その後に元の
+所有 `Vec<Block>` をそのまま `RenderedRow` へムーブできる。
+
+```rust
+let blocks: Vec<Block> = /* はみ出し判定・結合解決の結果（所有） */;
+let resolved = ResolvedRow { blocks: &blocks };
+let kind = strategy.classify_row(&resolved);
+// `resolved` の最終利用はここまで。NLLにより借用はここで終わるため、
+// 以下の `blocks` のムーブに clone() は不要。
+RenderedRow { kind, blocks }
+```
+
+（[PR #3のレビューコメント](https://github.com/MinamiyamaKotaro/extmd/pull/3#issuecomment-5301568286)で
+提起されたパフォーマンス懸念を検証した結果。最小再現コードでコンパイル・実行して確認済み）

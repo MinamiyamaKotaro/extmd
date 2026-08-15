@@ -12,7 +12,7 @@ pub struct Grid<T> {
 }
 
 impl<T> Grid<T> {
-    /// `cols == 0` は許容しない（理由は3章参照）。`rows == 0` は許容する
+    /// `cols == 0` は許容しない（理由は4章参照）。`rows == 0` は許容する
     /// （行データのない空シートを表現できる）。
     pub fn new(rows: usize, cols: usize, cells: Vec<T>) -> Self {
         assert!(cols > 0, "Grid: cols must be greater than 0");
