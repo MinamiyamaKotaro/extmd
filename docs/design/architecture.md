@@ -437,3 +437,17 @@ impl AnalysisStrategy for TabularStrategy {
   （[Issue #8での決定](https://github.com/MinamiyamaKotaro/extmd/issues/8#issuecomment-5301948782)）。
   クリーンアップを行いたい場合のオプション（例: `--clean`）の提供要否は未確定
   （[renderer/output.md 7章](renderer/output.md#7-未確定事項)）。
+
+[Issue #10](https://github.com/MinamiyamaKotaro/extmd/issues/10)での検討により、要件定義書8章
+項目6「CLIオプション名・デフォルト値」および上記の出力先クリーンアップオプションの要否は
+[CLI設計書](cli.md)側で確定した。詳細は各リンク先を参照。
+
+- CLI引数（`--strategy`/`--sheet`/`-o`/`--overflow-threshold`/`--no-overflow-merge`/`--split`/
+  `--clean`/`--timestamp`/`--heading-offset`/`--verbose`）の名称・デフォルト値・相互排他/依存関係
+  （[cli.md 2章](cli.md#2-cli引数仕様)）
+- 出力先クリーンアップオプションはオプトインの`--clean`として提供し、安全性の観点から
+  `remove_dir_all`ではなく出力先ディレクトリ直下の`.md`ファイルのみを削除する
+  （[cli.md 3.2節](cli.md#32-outputtarget-の構築とタイムスタンプクリーンアップ)）
+- `analysis/registry.md 5章`・`renderer/output.md 6章`で`cli.rs`側に持ち越されていた
+  `StrategyConfig`/`OutputTarget`の組み立てロジック、`heading_offset`の決定、
+  ログ出力方針（`-v/--verbose`、全ログをstderrへ出力）を確定した（[cli.md 3〜4章](cli.md#3-設定オブジェクトへのマッピングロジック)）
