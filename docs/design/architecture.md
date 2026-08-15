@@ -399,10 +399,22 @@ impl AnalysisStrategy for TabularStrategy {
 
 #### 6.1.5 テスト方針
 
-- 実際の方眼紙サンプル／通常表サンプルを複数用意し、`SheetMetrics` の値をスナップショット
-  として固定した上で、意図した戦略側が高スコアになることをテストする。
-- 境界的なサンプル（方眼紙と通常表の中間的なレイアウト）も用意し、6.1.4の
-  フォールバック閾値が妥当かを検証する。
+- 実際の方眼紙サンプル／通常表サンプルの`.xlsx`を`tests/fixtures/`に用意し、意図した戦略側が
+  選ばれることをテストする（`tests/analysis.rs`）。`SheetMetrics`自体は`analysis`外部に構築
+  できない（[metrics.md 4章](analysis/metrics.md#4-可視性の設計-pub--pubin-crateanalysis)）ため、
+  アサーションは`SheetMetrics`の生の値ではなく`StrategyRegistry::select_auto`が返す戦略の
+  `id()`に対して行う。フィクスチャの生成方法・一覧は[metrics.md 5章](analysis/metrics.md#5-テスト方針)を参照。
+- 境界的なサンプル（方眼紙と通常表の中間的なレイアウト）を用いた6.1.4のフォールバック閾値の
+  妥当性検証は、2種類のテストで行う。
+  - `tests/fixtures/application_form.xlsx`（tabular側のaffinityがわずかに上回るがフォールバック
+    マージン未満の差でgrid-paperが選ばれる、実データに近い境界事例、[metrics.md 5章](analysis/metrics.md#5-テスト方針)参照）。
+  - `analysis::registry`の単体テストによる`<`境界そのものの決定的な検証（境界値分析）。
+    全指標0の極端なケースに加え、規則的な密な表（`dense_regular_sheet`）で実際に計算した
+    tabular/grid-paperのaffinity差`diff`を用いて、`affinity_fallback_margin`を
+    `diff`ちょうど（フォールバックしない、`<`であり`<=`ではないため）・`diff`の直上
+    （フォールバックする）・直下（フォールバックしない）の3点に設定して確認する
+    （実データのfixtureでは`diff`を正確に制御できないため、この単体テストで判定条件の
+    境界を厳密にカバーする）。
 
 ## 7. 新しいドメイン戦略を追加する手順
 
