@@ -159,4 +159,11 @@ pub fn read_sheets(path: &std::path::Path, max_cells: usize) -> Result<Vec<domai
 - `ReaderError::Parse` が保持する文字列の情報量（umya-spreadsheet側のエラー型をどこまで
   透過的に保持するか）
 - `max_cells`（4.1節・5章）のデフォルト値の妥当性（実データでの検証が必要、[cli.md](../cli.md)参照）
-- `cargo audit`/`cargo deny`のCI導入方針（4.1節、CI設計書が存在しないため別途起票が必要）
+- ~~`cargo audit`/`cargo deny`のCI導入方針（4.1節、CI設計書が存在しないため別途起票が必要）~~
+  → [Issue #32](https://github.com/MinamiyamaKotaro/extmd/issues/32)で対応。
+  `.github/workflows/security-audit.yml`として`rustsec/audit-check`アクション（公式、
+  インストール不要）による`cargo audit`をCIに追加した。`Cargo.toml`/`Cargo.lock`が
+  変更されたPRでのみ実行する（`rust-ci.yml`/`docs-check.yml`と同じpathフィルタの考え方）。
+  `cargo deny`（ライセンス/重複依存チェック）は、v1時点の依存クレートが少数かつ
+  いずれも寛容なライセンス（MIT/Apache-2.0/BSD系）であることを確認済みのため、
+  現時点では導入を見送り、依存が増えた際に再検討する。
