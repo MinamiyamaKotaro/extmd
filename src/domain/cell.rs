@@ -70,8 +70,8 @@ impl Cell {
     /// 桁区切り・小数点以下桁数・パーセンテージ・基本的な日付/時刻の書式に対応する
     /// （docs/design/domain/cell.md 4章の「必須（v1スコープ）」の範囲）。
     /// 和暦・通貨記号等ロケール依存書式は[Issue #2](https://github.com/MinamiyamaKotaro/extmd/issues/2)
-    /// （`ssfmt`クレート採用可否スパイク）の決着待ちのため未対応で、該当する場合は
-    /// 表示形式を無視した既定フォーマットにフォールバックする。
+    /// のスパイク検証の結果`ssfmt`クレートをv1では不採用と決定したためv1スコープ外のまま
+    /// 未対応で、該当する場合は表示形式を無視した既定フォーマットにフォールバックする。
     pub fn display_text(&self) -> String {
         let format_code = self.number_format.as_deref();
         match &self.value {
