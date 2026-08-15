@@ -31,6 +31,61 @@ extmdは、セルからはみ出して表示されている文字列を検出し
 extmd input.xlsx --strategy auto -o output.md
 ```
 
+## ディレクトリ構成（予定）
+
+[アーキテクチャ設計書](docs/design/architecture.md)のパイプライン
+（Reader → StrategySelector → Analyzer → Renderer）にそのまま対応させた構成を想定しています。
+CLI（`main.rs`）はライブラリ（`lib.rs`）を薄く呼び出すだけにし、変換ロジック本体を
+`main.rs`を経由せずに単体テストできるようにします。
+
+```
+extmd/
+├── Cargo.toml
+├── src/
+│   ├── main.rs              # バイナリエントリポイント。cli.rsをパースしてlib.rsを呼ぶだけ
+│   ├── lib.rs                # 公開API（convert()等）。テストや他クレートからの利用を想定
+│   ├── cli.rs                 # clapによるCLI引数定義（--strategy, --sheet, -o など）
+│   ├── domain/                # コアドメイン型（要件と無関係にどの層からも参照される）
+│   │   ├── mod.rs
+│   │   ├── sheet.rs             # Sheet, Cell, MergeRange
+│   │   └── block.rs             # Block, RowKind, BlockSource
+│   ├── reader/                 # [1] Reader: xlsxファイル → Sheet
+│   │   ├── mod.rs
+│   │   └── xlsx.rs
+│   ├── analysis/                # [2]+[3] StrategySelector, Analyzer
+│   │   ├── mod.rs
+│   │   ├── strategy.rs            # AnalysisStrategy トレイト定義
+│   │   ├── registry.rs            # StrategyRegistry / select_auto
+│   │   ├── metrics.rs             # SheetMetrics計算（affinity用の特徴量）
+│   │   ├── heuristics.rs          # is_overflow_candidate等の共通ロジック
+│   │   └── strategies/
+│   │       ├── mod.rs
+│   │       ├── grid_paper.rs        # GridPaperStrategy
+│   │       └── tabular.rs           # TabularStrategy
+│   └── renderer/                # [4] Renderer: Vec<Block> → Markdown文字列
+│       ├── mod.rs
+│       └── markdown.rs
+├── tests/
+│   ├── fixtures/                # 方眼紙/通常表のサンプルxlsx
+│   └── conversion.rs             # 結合テスト・スナップショットテスト
+└── docs/
+    ├── requirement/
+    └── design/
+```
+
+各ディレクトリと設計書の対応:
+
+| ディレクトリ | 設計書の該当箇所 |
+|---|---|
+| `domain/` | 3. コアドメイン型 |
+| `analysis/strategy.rs` | 4. `AnalysisStrategy` トレイト |
+| `analysis/strategies/` | 5. 具体的な戦略実装 |
+| `analysis/registry.rs` | 6. 戦略の選択（`StrategySelector`） |
+| `analysis/metrics.rs`, `heuristics.rs` | 6.1 `affinity` のスコアリング設計 |
+
+新しいドメイン戦略を追加する際は `analysis/strategies/` に1ファイル追加するだけで、
+既存モジュールへの変更が不要になることを意図した構成です（設計書7章）。
+
 ## ロードマップ
 
 1. 要件定義（完了）
