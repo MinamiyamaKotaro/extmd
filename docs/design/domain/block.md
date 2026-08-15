@@ -36,6 +36,7 @@ pub struct Block {
     pub text: String,
     pub font: FontInfo,
     pub source: BlockSource,
+    pub heading_level: Option<u8>, // 見出しレベル（1〜6）。見出しでなければ None
 }
 
 impl Block {
@@ -51,3 +52,10 @@ impl Block {
 
 座標フィールド（`row`/`col_start`/`col_end`）の型は
 [mod.md 3章](mod.md#3-座標の表現rowindexcolindexの検討)の方針に従い、素の `usize` とする。
+
+**`heading_level`フィールドについて:** アーキテクチャ設計書2章の「Rendererは`analysis`
+（Strategy）に依存しない」という方針により、`AnalysisStrategy::heading_level`の判定結果を
+Renderer到達前（Analyzer内）に確定させて`Block`へ保持しておく必要がある。
+（[analysis層の詳細設計](../analysis/mod.md#5-domain層への変更-blockheading_level-の追加)で決定。
+Analyzerがこのフィールドを持たないと、Rendererが見出し出力のために`AnalysisStrategy`を
+直接呼ぶことになり、依存方向の方針に反してしまう。）
