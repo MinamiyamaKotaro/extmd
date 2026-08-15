@@ -217,9 +217,14 @@ Zip Bombそのものは防げない残存リスクである点は同節を参照
 |---|---|---|
 | `ConvertError::InputFileNotFound(path)` | 入力ファイルが存在しない | `Error: Input file not found: <path>` |
 | `ConvertError::InputFileTooLarge { path, size, limit }` | 入力ファイルの物理サイズが上限（100MB）を超過 | `Error: Input file too large: <path> (<size> bytes, limit: <limit> bytes)` |
-| `ConvertError::Reader(err)` | Excelファイルの読込・解析エラー（`ReaderError::SheetTooLarge`によるセル数上限超過を含む、[reader/mod.md 5章](reader/mod.md#5-readererror-と公開api)） | `Error: Failed to read Excel file: <err>` |
+| `ConvertError::Reader(path, err)` | Excelファイルの読込・解析エラー（`ReaderError::SheetTooLarge`によるセル数上限超過を含む、[reader/mod.md 5章](reader/mod.md#5-readererror-と公開api)） | `Error: Failed to read Excel file <path>: <err>` |
 | `ConvertError::Renderer(err)` | Markdownファイル書込、ディレクトリ作成等のI/Oエラー | `Error: Failed to write Markdown output: <err>` |
 | `ConvertError::InvalidStrategy(name)` | 無効な戦略IDが指定された場合 | `Error: Invalid strategy specified: <name>` |
+| `ConvertError::NoSheetsToConvert(path)` | 変換対象シートが0件（`--sheet`で指定した名前が1つもブック内に存在しない、または入力ファイル自体にシートが1つもない） | `Error: No sheets to convert in <path> (check --sheet names or the input file)` |
+
+`NoSheetsToConvert`は、実装時のレビュー（[Issue #34](https://github.com/MinamiyamaKotaro/extmd/issues/34)）で追加された。当初案では`--sheet`の指定ミスでフィルタ結果が空になった場合でも、警告ログ（3章参照）を出すだけで正常終了（終了コード0）していたが、変換結果が空のまま気付かれないリスクを避けるため、変換対象0件はエラー終了（終了コード1）に変更した。
+
+`ConvertError::Reader`の入力パス保持も、実装時のレビュー（[Issue #29](https://github.com/MinamiyamaKotaro/extmd/issues/29)）で追加された。当初案は`Reader(ReaderError)`（内部の`err`のみ）だったが、要件定義書5.2「原因が特定しやすいメッセージ」との整合を高めるため、呼び出し元（`convert`）が知っている入力パスをエラーに持たせるよう`Reader(PathBuf, ReaderError)`に変更した。
 
 ---
 
@@ -260,9 +265,10 @@ pub struct ConvertConfig {
 pub enum ConvertError {
     InputFileNotFound(PathBuf),
     InputFileTooLarge { path: PathBuf, size: u64, limit: u64 },
-    Reader(reader::ReaderError),
+    Reader(PathBuf, reader::ReaderError),
     Renderer(renderer::RendererError),
     InvalidStrategy(String),
+    NoSheetsToConvert(PathBuf),
 }
 
 impl std::fmt::Display for ConvertError {
@@ -274,9 +280,14 @@ impl std::fmt::Display for ConvertError {
                 "Error: Input file too large: {} ({} bytes, limit: {} bytes)",
                 path.display(), size, limit
             ),
-            ConvertError::Reader(e) => write!(f, "Error: Failed to read Excel file: {}", e), // {:?} ではなく {} (Display) を使用
+            ConvertError::Reader(path, e) => write!(f, "Error: Failed to read Excel file {}: {}", path.display(), e), // {:?} ではなく {} (Display) を使用
             ConvertError::Renderer(e) => write!(f, "Error: Failed to write Markdown output: {}", e), // {:?} ではなく {} (Display) を使用
             ConvertError::InvalidStrategy(s) => write!(f, "Error: Invalid strategy specified: {}", s),
+            ConvertError::NoSheetsToConvert(p) => write!(
+                f,
+                "Error: No sheets to convert in {} (check --sheet names or the input file)",
+                p.display()
+            ),
         }
     }
 }
@@ -300,7 +311,7 @@ pub fn convert(config: ConvertConfig) -> Result<(), ConvertError> {
 
     // 2. Reader: xlsxの読み込み（max_cellsによるシートサイズ上限チェックを含む、5章参照）
     let all_sheets = reader::read_sheets(&config.input_path, config.max_cells)
-        .map_err(ConvertError::Reader)?;
+        .map_err(|e| ConvertError::Reader(config.input_path.clone(), e))?;
 
     // 3. 変換対象シートのフィルタリング
     let target_sheets = if config.sheet_names.is_empty() {
@@ -318,6 +329,12 @@ pub fn convert(config: ConvertConfig) -> Result<(), ConvertError> {
             .filter(|s| config.sheet_names.contains(&s.name))
             .collect()
     };
+
+    // 3.1. 変換対象が0件の場合はエラーとする（Issue #34。`--sheet`の指定ミスで
+    // 変換結果が空のまま正常終了してしまうのを防ぐ）。
+    if target_sheets.is_empty() {
+        return Err(ConvertError::NoSheetsToConvert(config.input_path));
+    }
 
     // 4. StrategyRegistry の初期化
     let registry = analysis::StrategyRegistry::with_config(config.strategy_config);

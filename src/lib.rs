@@ -38,9 +38,10 @@ pub enum ConvertError {
         size: u64,
         limit: u64,
     },
-    Reader(reader::ReaderError),
+    Reader(PathBuf, reader::ReaderError),
     Renderer(renderer::RendererError),
     InvalidStrategy(String),
+    NoSheetsToConvert(PathBuf),
 }
 
 impl std::fmt::Display for ConvertError {
@@ -54,11 +55,20 @@ impl std::fmt::Display for ConvertError {
                 "Error: Input file too large: {} ({size} bytes, limit: {limit} bytes)",
                 path.display()
             ),
-            ConvertError::Reader(e) => write!(f, "Error: Failed to read Excel file: {e}"),
+            ConvertError::Reader(path, e) => write!(
+                f,
+                "Error: Failed to read Excel file {}: {e}",
+                path.display()
+            ),
             ConvertError::Renderer(e) => write!(f, "Error: Failed to write Markdown output: {e}"),
             ConvertError::InvalidStrategy(s) => {
                 write!(f, "Error: Invalid strategy specified: {s}")
             }
+            ConvertError::NoSheetsToConvert(p) => write!(
+                f,
+                "Error: No sheets to convert in {} (check --sheet names or the input file)",
+                p.display()
+            ),
         }
     }
 }
@@ -82,8 +92,8 @@ pub fn convert(config: ConvertConfig) -> Result<(), ConvertError> {
     }
 
     // 2. Reader: xlsxの読み込み(max_cellsによるシートサイズ上限チェックを含む)
-    let all_sheets =
-        reader::read_sheets(&config.input_path, config.max_cells).map_err(ConvertError::Reader)?;
+    let all_sheets = reader::read_sheets(&config.input_path, config.max_cells)
+        .map_err(|e| ConvertError::Reader(config.input_path.clone(), e))?;
 
     // 3. 変換対象シートのフィルタリング
     let target_sheets = if config.sheet_names.is_empty() {
@@ -101,6 +111,13 @@ pub fn convert(config: ConvertConfig) -> Result<(), ConvertError> {
             .filter(|s| config.sheet_names.contains(&s.name))
             .collect()
     };
+
+    // 3.1. 変換対象が0件の場合はエラーとする。`--sheet`の指定ミス（タイポ等）で
+    // 変換結果が空になったまま正常終了(終了コード0)してしまうと気付きにくいため
+    // （Issue #34レビューコメントでの指摘を反映）。
+    if target_sheets.is_empty() {
+        return Err(ConvertError::NoSheetsToConvert(config.input_path));
+    }
 
     // 4. StrategyRegistry の初期化
     let registry = analysis::StrategyRegistry::with_config(config.strategy_config);
@@ -202,6 +219,23 @@ mod tests {
     }
 
     #[test]
+    fn convert_reader_error_includes_the_input_path() {
+        let path = temp_xlsx_path("not-an-xlsx");
+        std::fs::write(&path, b"this is not a zip/xlsx file").unwrap();
+
+        let config = default_config(path.clone(), renderer::OutputTarget::Stdout);
+        let err = convert(config).unwrap_err();
+
+        match &err {
+            ConvertError::Reader(p, _) => assert_eq!(p, &path),
+            other => panic!("expected ConvertError::Reader, got {other:?}"),
+        }
+        assert!(err.to_string().contains(&path.display().to_string()));
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
     fn convert_returns_input_file_not_found_for_missing_path() {
         let config = default_config(
             PathBuf::from("/nonexistent/does-not-exist.xlsx"),
@@ -245,24 +279,54 @@ mod tests {
         let _ = std::fs::remove_file(&output);
     }
 
+    /// `umya_spreadsheet::new_file()`の既定シート"Sheet1"に加えて、もう1シート追加する。
+    fn write_two_sheet_workbook(path: &std::path::Path) {
+        let mut book = umya_spreadsheet::new_file();
+        book.sheet_by_name_mut("Sheet1")
+            .unwrap()
+            .cell_mut("A1")
+            .set_value("first");
+        book.new_sheet("Sheet2")
+            .unwrap()
+            .cell_mut("A1")
+            .set_value("second");
+        umya_spreadsheet::writer::xlsx::write(&book, path).unwrap();
+    }
+
     #[test]
     fn convert_filters_sheets_by_sheet_names() {
         let input = temp_xlsx_path("filter");
-        write_minimal_workbook(&input, "hello");
+        write_two_sheet_workbook(&input);
         let output = input.with_extension("md");
 
         let mut config = default_config(
             input.clone(),
             renderer::OutputTarget::SingleFile(output.clone()),
         );
-        config.sheet_names = vec!["NoSuchSheet".to_string()];
+        config.sheet_names = vec!["Sheet2".to_string()];
         convert(config).unwrap();
 
         let body = std::fs::read_to_string(&output).unwrap();
         assert!(!body.contains("Sheet1"));
+        assert!(body.contains("Sheet2"));
+        assert!(body.contains("second"));
 
         let _ = std::fs::remove_file(&input);
         let _ = std::fs::remove_file(&output);
+    }
+
+    #[test]
+    fn convert_returns_error_when_no_sheets_match_the_filter() {
+        let input = temp_xlsx_path("no-match");
+        write_minimal_workbook(&input, "hello");
+
+        let mut config = default_config(input.clone(), renderer::OutputTarget::Stdout);
+        config.sheet_names = vec!["NoSuchSheet".to_string()];
+
+        let err = convert(config).unwrap_err();
+        assert!(matches!(err, ConvertError::NoSheetsToConvert(p) if p == input));
+
+        let _ = std::fs::remove_file(&input);
     }
 
     fn temp_dir_path(name: &str) -> std::path::PathBuf {

@@ -165,5 +165,11 @@ fn render_body(doc: &domain::Document, heading_offset: u8) -> String {
 
 - `render_concatenated`/`render_body`が挟む区切り（`\n\n`）や末尾改行の厳密な仕様は
   実装・スナップショットテストの段階で確定させる
-- `SplitDirectory`時、シートが1件も存在しない（空のワークブック）場合の挙動
-  （空ディレクトリを作るだけで正常終了するか、エラーにするか）
+- ~~`SplitDirectory`時、シートが1件も存在しない（空のワークブック）場合の挙動
+  （空ディレクトリを作るだけで正常終了するか、エラーにするか）~~
+  → `renderer::render`自体は`documents`が空でもエラーにせず空出力/空ディレクトリを
+  作成する寛容な実装のまま変更していないが、実際のCLIパイプライン（`lib::convert`）側で
+  変換対象シートが0件の場合に`ConvertError::NoSheetsToConvert`を返し、`renderer::render`
+  に到達する前に弾くよう決着した（[cli.md 5.2節](../cli.md#52-変換プロセス実行時のエラー-converterror)、Issue #34）。
+  `renderer`を直接ライブラリとして呼ぶ他の利用者のために、`render`自体の寛容な挙動は
+  意図的に維持している。
