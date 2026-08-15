@@ -41,13 +41,36 @@ pub struct SheetMetrics {
 5. **`merge_irregularity`**
    ネイティブ結合セル（[domain/sheet.md](../domain/sheet.md)の`MergeRange`）のうち、
    `MergeRange::is_single_row_or_column()`が`false`となる割合。フォーム系の方眼紙シートは
-   タイトル欄・記入欄で不規則な結合が多い傾向がある。
+   タイトル欄・記入欄で不規則な結合が多い傾向がある。**`sheet.merges`が空（結合セルが
+   1つもない、最も一般的なケース）の場合はゼロ除算になるため`0.0`を返す。**
+   これは3章の非空セル数によるガードとは独立した条件（結合セルの有無と非空セルの有無は
+   無関係）のため、`merge_irregularity`の算出箇所で個別にガードする
+   （[PR #7のレビューコメント](https://github.com/MinamiyamaKotaro/extmd/pull/7#issuecomment-5301859980)での指摘を受けて洗い出した、同種の問題）。
 
 ## 3. `compute_sheet_metrics`
 
 ```rust
 /// `StrategyRegistry::select_auto`（registry.rs）からのみ呼ばれる。
 pub(in crate::analysis) fn compute_sheet_metrics(sheet: &domain::Sheet) -> SheetMetrics {
+    let non_empty_count = sheet.cells.iter_rows().flatten().filter(|c| !c.is_empty()).count();
+
+    // 非空セルが1つもない場合、2章の各指標はいずれもゼロ除算になる
+    // （fill_density: bounding boxの面積が0、row_structural_regularity: 非空行が0、
+    // overflow_candidate_rate: 非空セル総数が0での除算）。reader/xlsx.md 3章の
+    // 「列数0のシート」（rows=0, cols=1で構築される空Grid）はこの条件を満たす
+    // 正当な入力であり、パニックさせずにデフォルト値のSheetMetricsを返す
+    // （[PR #7のレビューコメント](https://github.com/MinamiyamaKotaro/extmd/pull/7#issuecomment-5301859980)での指摘を反映）。
+    if non_empty_count == 0 {
+        return SheetMetrics {
+            avg_column_width: 0.0,
+            column_width_stddev: 0.0,
+            overflow_candidate_rate: 0.0,
+            fill_density: 0.0,
+            row_structural_regularity: 0.0,
+            merge_irregularity: 0.0,
+        };
+    }
+
     // 2章の各指標を算出する
 }
 ```

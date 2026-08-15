@@ -79,13 +79,20 @@ impl StrategyRegistry {
             .collect();
         scored.sort_by(|a, b| b.1.total_cmp(&a.1));
 
-        // 3章: 僅差ならgrid-paperを優先
+        // 3章: 僅差なら「上位2戦略の中で」grid-paperを優先する。
+        // `.take(2)`を挟まないと、戦略が3つ以上ある場合に3位以下の低スコアな
+        // grid-paperが誤って選ばれてしまう
+        // （[PR #7のレビューコメント](https://github.com/MinamiyamaKotaro/extmd/pull/7#issuecomment-5301859980)での指摘を反映）。
         if scored.len() >= 2 && (scored[0].1 - scored[1].1) < self.fallback_margin {
-            if let Some(gp) = scored.iter().find(|(s, _)| s.id() == "grid-paper") {
+            if let Some(gp) = scored.iter().take(2).find(|(s, _)| s.id() == "grid-paper") {
                 return gp.0;
             }
         }
-        scored[0].0
+
+        // `with_config`は常に1つ以上の戦略を登録するため到達しないが、将来の動的登録
+        // （strategies/mod.md 3章）に備え、境界外アクセスではなく明示的なpanicにする
+        // （同レビューコメントでの指摘を反映）。
+        scored.first().map(|(s, _)| *s).expect("registry must not be empty")
     }
 }
 ```

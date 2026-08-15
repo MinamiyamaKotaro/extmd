@@ -83,7 +83,7 @@ fn resolve_blocks(sheet: &domain::Sheet, row_idx: usize, strategy: &dyn Analysis
             continue;
         }
 
-        let following = trailing_empty(&row[col + 1..]);
+        let following = trailing_empty(sheet, row_idx, &row[col + 1..], col + 1);
         let ctx = OverflowContext { source: &row[col], following_empty_cells: following };
         let (source, col_end) = match strategy.detect_overflow(&ctx) {
             OverflowDecision::NoMerge => (domain::BlockSource::Single, col),
@@ -94,6 +94,35 @@ fn resolve_blocks(sheet: &domain::Sheet, row_idx: usize, strategy: &dyn Analysis
     }
 
     blocks
+}
+
+/// `following`（対象セルの右隣から続くセル列）のうち、「連続する空セル」を返す。
+/// ネイティブ結合セルの範囲（左上セルに限らない）に達した時点で打ち切る。
+/// 結合範囲の左上以外のセルもグリッド上は空（`CellValue::Empty`）として表現される
+/// （[domain/sheet.md](../domain/sheet.md)）ため、単純に`is_empty()`だけで判定すると
+/// 結合セルの領域まではみ出し結合の対象に含めてしまう
+/// （[PR #7のレビューコメント](https://github.com/MinamiyamaKotaro/extmd/pull/7#issuecomment-5301859980)での指摘を反映）。
+fn trailing_empty<'a>(
+    sheet: &domain::Sheet,
+    row_idx: usize,
+    following: &'a [domain::Cell],
+    start_col: usize,
+) -> &'a [domain::Cell] {
+    let mut len = 0;
+    for (i, cell) in following.iter().enumerate() {
+        if !cell.is_empty() || is_in_native_merge(sheet, row_idx, start_col + i) {
+            break;
+        }
+        len = i + 1;
+    }
+    &following[..len]
+}
+
+/// 指定座標がいずれかのネイティブ結合セルの範囲内（左上セルに限らない）に含まれるか。
+fn is_in_native_merge(sheet: &domain::Sheet, row: usize, col: usize) -> bool {
+    sheet.merges.iter().any(|m| {
+        (m.row_start..=m.row_end).contains(&row) && (m.col_start..=m.col_end).contains(&col)
+    })
 }
 
 /// `Block`を構築し、その場で`heading_level`を確定させて格納する（5章）。
@@ -115,8 +144,11 @@ fn build_block(
   結合範囲の左上セルであるものを探すヘルパー（このファイル内のプライベート関数）。結合範囲の
   左上以外のセル（結合により本来は非表示になるセル、値は空）は`row[col].is_empty()`の分岐で
   読み飛ばされる。
-- `trailing_empty`は「右隣から連続する空セルのみ」に絞るヘルパー（[strategy.md 1章](strategy.md#1-overflowcontext--overflowdecision-の配置場所についての設計判断)の
-  `OverflowContext::following_empty_cells`の契約を満たすため）。
+- `trailing_empty`は「右隣から連続する空セル、ただしネイティブ結合セルの領域は除く」に絞る
+  ヘルパー（[strategy.md 1章](strategy.md#1-overflowcontext--overflowdecision-の配置場所についての設計判断)の
+  `OverflowContext::following_empty_cells`の契約を満たすため）。ネイティブ結合セルの左上が
+  空文字（値なし）の場合、単純な空セル判定だけでは結合範囲の内部まで空セル列として
+  収集してしまうため、`is_in_native_merge`で境界チェックする。
 
 ## 5. domain層への変更: `Block::heading_level` の追加
 

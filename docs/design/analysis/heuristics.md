@@ -40,16 +40,23 @@ pub(in crate::analysis) fn is_overflow_candidate(
 ```rust
 pub(in crate::analysis) fn estimate_render_width(cell: &domain::Cell) -> f64 {
     let text = cell.value.display_text(); // domain/cell.md 1章
-    text.chars()
+    let base_width: f64 = text.chars()
         .map(|c| if is_full_width(c) { 2.0 } else { 1.0 })
-        .sum()
+        .sum();
+
+    // Excelの列幅は既定フォントサイズ（11pt）を基準とした単位のため、
+    // セルのフォントサイズがそれより大きい/小さい場合は比例して幅を補正する
+    // （[PR #7のレビューコメント](https://github.com/MinamiyamaKotaro/extmd/pull/7#issuecomment-5301859980)での指摘を反映。
+    // 元の実装は文字数・全角半角のみで、大きい見出しフォントのはみ出しを
+    // 過小評価していた）。
+    base_width * (cell.font.size_pt as f64 / 11.0)
 }
 ```
 
 要件定義書5.3.2「文字数・全角/半角を考慮した概算幅」に対応する。全角/半角の判定
 （`is_full_width`）はUnicode East Asian Widthに基づく簡易判定を想定するが、境界となる
-文字幅の係数（全角=2.0固定でよいか、フォントごとの実測値に寄せるか）は実データでの
-検証が必要（6章）。
+文字幅の係数（全角=2.0固定でよいか、フォントごとの実測値に寄せるか）とフォントサイズ
+補正の基準値（11pt）は実データでの検証が必要（6章）。
 
 ## 4. `normalize` / `normalize_inverse`
 

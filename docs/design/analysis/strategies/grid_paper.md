@@ -91,8 +91,17 @@ fn detect_overflow(&self, ctx: &OverflowContext) -> OverflowDecision {
 
 ```rust
 fn classify_row(&self, row: &ResolvedRow) -> RowKind {
-    // 行が少数の大きなブロック（結合・はみ出し結合により複数列にまたがる）で
-    // 構成される場合はFlow、そうでなければTableRowとする。
+    // 要件定義書5.3.4「1行が単一の大きなテキストブロックで構成される場合」に対応し、
+    // ブロックが1つだけの行は、はみ出し・結合の有無（span）によらずFlowとする。
+    // これがないと、はみ出しも結合もしていない単独セルの短い見出し・段落
+    // （1列のみの"TableRow"に見えてしまう）を誤ってテーブル扱いしてしまう
+    // （[PR #7のレビューコメント](https://github.com/MinamiyamaKotaro/extmd/pull/7#issuecomment-5301859980)での指摘を反映）。
+    if row.blocks.len() == 1 {
+        return RowKind::Flow;
+    }
+
+    // 複数ブロックの行は、少数の大きなブロック（結合・はみ出し結合により
+    // 複数列にまたがる）で構成される場合はFlow、そうでなければTableRowとする。
     let flow_like = row.blocks.iter().filter(|b| b.span() > 1).count();
     if row.blocks.len() <= 3 && flow_like > 0 {
         RowKind::Flow
@@ -109,10 +118,17 @@ fn classify_row(&self, row: &ResolvedRow) -> RowKind {
 
 ```rust
 fn heading_level(&self, block: &Block) -> Option<u8> {
-    if !block.font.bold {
+    let size = block.font.size_pt;
+
+    // 14pt以上は太字不問で見出しとみなす（Excelでは太字にせずフォントサイズだけで
+    // 見出しを表現するケースが多いため）。14pt未満は通常の強調表示と区別するため
+    // 太字を必須条件とする
+    // （[PR #7のレビューコメント](https://github.com/MinamiyamaKotaro/extmd/pull/7#issuecomment-5301859980)での指摘を反映）。
+    if size < 14.0 && !block.font.bold {
         return None;
     }
-    match block.font.size_pt {
+
+    match size {
         s if s >= 18.0 => Some(1),
         s if s >= 16.0 => Some(2),
         s if s >= 14.0 => Some(3),
@@ -122,8 +138,8 @@ fn heading_level(&self, block: &Block) -> Option<u8> {
 }
 ```
 
-太字かつフォントサイズが一定以上の場合のみ見出しとみなす。サイズ境界値・太字を
-必須条件とするかは実データでの検証が必要（6章）。
+フォントサイズが一定以上の場合は太字不問、それ未満は太字必須で見出しとみなす。
+サイズ境界値（14pt/12pt等）は暫定であり、実データでの検証が必要（6章）。
 
 ## 6. 未確定事項
 
