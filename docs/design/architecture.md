@@ -443,11 +443,14 @@ impl AnalysisStrategy for TabularStrategy {
 [CLI設計書](cli.md)側で確定した。詳細は各リンク先を参照。
 
 - CLI引数（`--strategy`/`--sheet`/`-o`/`--overflow-threshold`/`--no-overflow-merge`/`--split`/
-  `--clean`/`--timestamp`/`--heading-offset`/`--verbose`）の名称・デフォルト値・相互排他/依存関係
+  `--clean`/`--timestamp`/`--verbose`）の名称・デフォルト値・相互排他/依存関係
   （[cli.md 2章](cli.md#2-cli引数仕様)）
 - 出力先クリーンアップオプションはオプトインの`--clean`として提供し、安全性の観点から
   `remove_dir_all`ではなく出力先ディレクトリ直下の`.md`ファイルのみを削除する
   （[cli.md 3.2節](cli.md#32-outputtarget-の構築とタイムスタンプクリーンアップ)）
 - `analysis/registry.md 5章`・`renderer/output.md 6章`で`cli.rs`側に持ち越されていた
-  `StrategyConfig`/`OutputTarget`の組み立てロジック、`heading_offset`の決定、
-  ログ出力方針（`-v/--verbose`、全ログをstderrへ出力）を確定した（[cli.md 3〜4章](cli.md#3-設定オブジェクトへのマッピングロジック)）
+  `StrategyConfig`/`OutputTarget`の組み立てロジック、ログ出力方針（`-v/--verbose`、
+  全ログをstderrへ出力）を確定した（[cli.md 3〜4章](cli.md#3-設定オブジェクトへのマッピングロジック)）。
+  `heading_offset`は`renderer::render`が`OutputTarget`から内部算出する既存設計
+  （[renderer/mod.md 5章](renderer/mod.md#5-シート見出しレベルと本文見出しレベルの階層関係heading_offset)）
+  のままとし、CLI側での明示上書きはv1スコープに含めない（[cli.md 7章](cli.md#7-未確定事項考慮点)）。
