@@ -96,15 +96,14 @@ Excelの表示形式は色指定（`[Red]0.00`）やロケール指定（`[$-de-
 改めて検証した結果、**`umya-spreadsheet`も`helper::date::excel_to_date_time_chrono`として
 `chrono::NaiveDateTime`への変換ヘルパーを公式に提供しており**（2章）、`calamine`と同様に
 `chrono`エコシステムとの親和性は満たされている。したがって `chrono` 採用の結論自体は
-引き続き妥当だが、**cell.md 1章の「根拠」の記述（`calamine`前提）は事実と食い違っており、
-「Reader候補であるumya-spreadsheetが`helper::date`モジュールでchrono変換ヘルパーを提供している」
-という記述に修正する必要がある。この修正は本Issueのスコープ外のため、別Issue/PRで
-cell.mdを更新する。**
+引き続き妥当だが、cell.md 1章の「根拠」の記述（`calamine`前提）は事実と食い違っていた。
+この修正は本Issueのスコープ外だったため別Issue（[Issue #31](https://github.com/MinamiyamaKotaro/extmd/issues/31)）として起票し、
+[cell.md 1章](../domain/cell.md#1-cellvalue)を「Reader候補であるumya-spreadsheetが`helper::date`モジュールで
+chrono変換ヘルパーを提供している」という記述に修正済み。
 
 ## 6. 未確定事項
 
 - カスタム日付書式のトークン検出ロジックの詳細（4章）。リテラル文字列・エスケープ文字・
   角括弧区間（色指定/ロケール指定/経過時間書式）の除外は実装済みだが、他の未知の
   誤検出源が実データで見つかる可能性は残る
-- Mac 1904カレンダー基準ファイルへの対応要否（2章、実データでの遭遇頻度次第）
-- [cell.mdのchrono根拠記述を修正するPR](#5-cellmdのchrono採用根拠との整合)（別Issueとして起票）
+- Mac 1904カレンダー基準ファイルへの対応要否（2章、実データでの遭遇頻度次第、[Issue #30](https://github.com/MinamiyamaKotaro/extmd/issues/30)）

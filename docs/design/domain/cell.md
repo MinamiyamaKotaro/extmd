@@ -44,12 +44,19 @@ reader/analysis/renderer層）から見えるのは `CellValue::display_text()` 
 どちらに転んでも `cell.rs` 内の実装だけを差し替えれば済む
 （[PR #3のレビューコメント](https://github.com/MinamiyamaKotaro/extmd/pull/3#issuecomment-5301554119)での指摘を反映）。
 
-**日付/日時ライブラリの決定: `chrono`。** Reader候補である`calamine`が公式に
-`chrono` フィーチャー（`chrono::NaiveDate`/`NaiveDateTime`/`NaiveTime` への変換ヘルパー）
-を提供しており、日付セルの変換をReader層でそのまま利用できるエコシステム親和性を
-唯一の決定根拠とする。（`time`クレートとの比較で語られがちなセキュリティ上の優劣は、
-過去の関連脆弱性が当時両クレートに同根で存在したものであり、決定根拠には含めない。
-[Issue #1のレビューコメント](https://github.com/MinamiyamaKotaro/extmd/issues/1)参照。）
+**日付/日時ライブラリの決定: `chrono`。** Reader候補である`umya-spreadsheet`が公式に
+`helper::date`モジュール（`excel_to_date_time_chrono`等、`chrono::NaiveDate`/
+`NaiveDateTime`/`NaiveTime`への変換ヘルパー）を提供しており、日付セルの変換をReader層で
+そのまま利用できるエコシステム親和性を唯一の決定根拠とする。（`time`クレートとの比較で
+語られがちなセキュリティ上の優劣は、過去の関連脆弱性が当時両クレートに同根で存在した
+ものであり、決定根拠には含めない。[Issue #1のレビューコメント](https://github.com/MinamiyamaKotaro/extmd/issues/1)参照。）
+
+（本節は当初、Reader候補を`calamine`と想定して「`calamine`が公式に`chrono`フィーチャーを
+提供している」ことを決定根拠として記載していたが、実際には[reader/mod.md 4章](../reader/mod.md#4-使用ライブラリの決定-umya-spreadsheet)の
+通り`umya-spreadsheet`を採用しており、事実と異なる記述になっていた。改めて確認した結果、
+`umya-spreadsheet`も同様に`chrono`変換ヘルパーを公式提供しているため`chrono`採用の
+結論自体に変更はないが、根拠の記述を実態に合わせて修正した
+（[reader/date.md 5章](../reader/date.md#5-cellmdのchrono採用根拠との整合)で判明、Issue #31）。）
 
 ## 2. `Alignment` / `FontInfo`
 
