@@ -67,6 +67,27 @@ fn resolve_blocks(
         }
 
         if row[col].is_empty() {
+            // 縦方向のネイティブ結合セル（rowspan相当）の、左上以外の行に達した場合。
+            // Markdownのパイプテーブルはrowspanを持たないため、結合範囲の左上セルの
+            // 値をこの行にも複製して出力する（Issue #46。複製せず空欄のままにすると、
+            // データが欠けているように見えてしまうため）。
+            if let Some(merge) = covering_merge(sheet, row_idx, col) {
+                let top_left = sheet
+                    .cells
+                    .get(merge.row_start, merge.col_start)
+                    .expect("MergeRange must be within cells bounds (Sheet invariant)");
+                blocks.push(build_block(
+                    top_left,
+                    row_idx,
+                    merge.col_start,
+                    merge.col_end,
+                    domain::BlockSource::NativeMerge,
+                    strategy,
+                ));
+                col = merge.col_end + 1;
+                continue;
+            }
+
             col += 1;
             continue;
         }
@@ -117,7 +138,12 @@ fn trailing_empty<'a>(
 
 /// 指定座標がいずれかのネイティブ結合セルの範囲内（左上セルに限らない）に含まれるか。
 fn is_in_native_merge(sheet: &domain::Sheet, row: usize, col: usize) -> bool {
-    sheet.merges.iter().any(|m| {
+    covering_merge(sheet, row, col).is_some()
+}
+
+/// 指定座標を含む（左上セルに限らない）ネイティブ結合セルの範囲を返す。
+fn covering_merge(sheet: &domain::Sheet, row: usize, col: usize) -> Option<&domain::MergeRange> {
+    sheet.merges.iter().find(|m| {
         (m.row_start..=m.row_end).contains(&row) && (m.col_start..=m.col_end).contains(&col)
     })
 }
@@ -309,5 +335,56 @@ mod tests {
         assert_eq!(blocks.len(), 1);
         assert_eq!(blocks[0].source, domain::BlockSource::OverflowMerge);
         assert!(blocks[0].col_end > 0);
+    }
+
+    #[test]
+    fn resolve_blocks_duplicates_vertical_merge_value_on_continuation_rows() {
+        // 縦方向のネイティブ結合セル（rowspan相当、Issue #46）: A列は結合なしで
+        // 各行に値が入り、B列は行0-2が"merged"というテキストで縦結合されている。
+        let sheet = domain::Sheet {
+            name: "s".into(),
+            cells: domain::Grid::new(
+                3,
+                2,
+                vec![
+                    text("row0", 8.0),
+                    text("merged", 8.0),
+                    text("row1", 8.0),
+                    empty(8.0),
+                    text("row2", 8.0),
+                    empty(8.0),
+                ],
+            ),
+            merges: vec![domain::MergeRange {
+                row_start: 0,
+                row_end: 2,
+                col_start: 1,
+                col_end: 1,
+            }],
+        };
+        let strategy = registry::StrategyRegistry::with_defaults();
+        let strategy = strategy.get("tabular").unwrap();
+
+        let top_blocks = resolve_blocks(&sheet, 0, strategy);
+        assert_eq!(top_blocks.len(), 2);
+        assert_eq!(top_blocks[1].text, "merged");
+        assert_eq!(top_blocks[1].source, domain::BlockSource::NativeMerge);
+
+        for row_idx in [1, 2] {
+            let blocks = resolve_blocks(&sheet, row_idx, strategy);
+            assert_eq!(
+                blocks.len(),
+                2,
+                "row {row_idx} should also see the duplicated merge value"
+            );
+            assert_eq!(blocks[1].text, "merged");
+            assert_eq!(blocks[1].source, domain::BlockSource::NativeMerge);
+            assert_eq!(blocks[1].col_start, 1);
+            assert_eq!(blocks[1].col_end, 1);
+            assert_eq!(
+                blocks[1].row, row_idx,
+                "duplicated block should report the current row, not the merge's top row"
+            );
+        }
     }
 }

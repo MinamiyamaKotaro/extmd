@@ -73,12 +73,23 @@ fn resolve_blocks(sheet: &domain::Sheet, row_idx: usize, strategy: &dyn Analysis
     while col < row.len() {
         if let Some(merge) = native_merge_at(sheet, row_idx, col) {
             // 要件定義書5.3.3: ネイティブ結合セル内ではみ出し判定を行わない
-            blocks.push(build_block(row_idx, col, domain::BlockSource::NativeMerge, merge.col_end, strategy));
+            blocks.push(build_block(&row[col], row_idx, col, merge.col_end, domain::BlockSource::NativeMerge, strategy));
             col = merge.col_end + 1;
             continue;
         }
 
         if row[col].is_empty() {
+            // 縦方向のネイティブ結合セル（rowspan相当）の、左上以外の行に達した場合。
+            // Markdownのパイプテーブルはrowspanを持たないため、結合範囲の左上セルの値を
+            // この行にも複製して出力する（Issue #46。空欄のままだとデータが欠けて見える）。
+            if let Some(merge) = covering_merge(sheet, row_idx, col) {
+                let top_left = sheet.cells.get(merge.row_start, merge.col_start)
+                    .expect("MergeRange must be within cells bounds (Sheet invariant)");
+                blocks.push(build_block(top_left, row_idx, merge.col_start, merge.col_end, domain::BlockSource::NativeMerge, strategy));
+                col = merge.col_end + 1;
+                continue;
+            }
+
             col += 1;
             continue;
         }
@@ -89,7 +100,7 @@ fn resolve_blocks(sheet: &domain::Sheet, row_idx: usize, strategy: &dyn Analysis
             OverflowDecision::NoMerge => (domain::BlockSource::Single, col),
             OverflowDecision::MergeCells { count } => (domain::BlockSource::OverflowMerge, col + count),
         };
-        blocks.push(build_block(row_idx, col, source, col_end, strategy));
+        blocks.push(build_block(&row[col], row_idx, col, col_end, source, strategy));
         col = col_end + 1;
     }
 
@@ -120,35 +131,52 @@ fn trailing_empty<'a>(
 
 /// 指定座標がいずれかのネイティブ結合セルの範囲内（左上セルに限らない）に含まれるか。
 fn is_in_native_merge(sheet: &domain::Sheet, row: usize, col: usize) -> bool {
-    sheet.merges.iter().any(|m| {
+    covering_merge(sheet, row, col).is_some()
+}
+
+/// 指定座標を含む（左上セルに限らない）ネイティブ結合セルの範囲を返す。
+fn covering_merge(sheet: &domain::Sheet, row: usize, col: usize) -> Option<&domain::MergeRange> {
+    sheet.merges.iter().find(|m| {
         (m.row_start..=m.row_end).contains(&row) && (m.col_start..=m.col_end).contains(&col)
     })
 }
 
+/// 指定座標が、いずれかのネイティブ結合セル範囲の左上セルであれば、その範囲を返す。
+fn native_merge_at(sheet: &domain::Sheet, row: usize, col: usize) -> Option<&domain::MergeRange> {
+    sheet.merges.iter().find(|m| m.row_start == row && m.col_start == col)
+}
+
 /// `Block`を構築し、その場で`heading_level`を確定させて格納する（5章）。
+/// text/fontは結合・はみ出し範囲の左上セル（`source_cell`）の値をそのまま使う。
 fn build_block(
+    source_cell: &domain::Cell,
     row: usize,
     col_start: usize,
-    source: domain::BlockSource,
     col_end: usize,
+    source: domain::BlockSource,
     strategy: &dyn AnalysisStrategy,
 ) -> domain::Block {
-    // text/fontの合成（結合範囲の左上セルの値をそのまま使う）は省略
-    let mut block = domain::Block { row, col_start, col_end, text: /* .. */ String::new(), font: /* .. */ Default::default(), source, heading_level: None };
+    let mut block = domain::Block { row, col_start, col_end, text: source_cell.display_text(), font: source_cell.font.clone(), source, heading_level: None };
     block.heading_level = strategy.heading_level(&block);
     block
 }
 ```
 
 - `native_merge_at`は`sheet.merges`（[domain/sheet.md](../domain/sheet.md)）から、その行・列が
-  結合範囲の左上セルであるものを探すヘルパー（このファイル内のプライベート関数）。結合範囲の
-  左上以外のセル（結合により本来は非表示になるセル、値は空）は`row[col].is_empty()`の分岐で
-  読み飛ばされる。
+  結合範囲の左上セルであるものを探すヘルパー（このファイル内のプライベート関数）。
+- `covering_merge`は`native_merge_at`と異なり、左上セルに限らず指定座標を含む結合範囲を
+  返す。`is_in_native_merge`（`trailing_empty`用の真偽値判定）と、縦方向の結合セルの
+  複製（`resolve_blocks`本体、Issue #46）の両方から使われる共通ヘルパー。
 - `trailing_empty`は「右隣から連続する空セル、ただしネイティブ結合セルの領域は除く」に絞る
   ヘルパー（[strategy.md 1章](strategy.md#1-overflowcontext--overflowdecision-の配置場所についての設計判断)の
   `OverflowContext::following_empty_cells`の契約を満たすため）。ネイティブ結合セルの左上が
   空文字（値なし）の場合、単純な空セル判定だけでは結合範囲の内部まで空セル列として
   収集してしまうため、`is_in_native_merge`で境界チェックする。
+- 結合範囲の左上以外のセル（`row[col].is_empty()`で検出）に達した場合、単に読み飛ばすと
+  Markdownのパイプテーブルにはその行だけ値が欠けて見える（rowspanを表現できないため）。
+  そこで`covering_merge`でその行が縦方向の結合範囲内かどうかを判定し、範囲内であれば
+  左上セルの値を複製した`Block`をこの行にも生成する（[Issue #46](https://github.com/MinamiyamaKotaro/extmd/issues/46)。
+  [renderer/table.md 3章](../renderer/table.md#3-結合セルcol_startcol_endの表現)参照）。
 
 ## 5. domain層への変更: `Block::heading_level` の追加
 

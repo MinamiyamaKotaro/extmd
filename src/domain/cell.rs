@@ -82,10 +82,12 @@ impl Cell {
     }
 }
 
-/// 数値の表示形式コードを適用する。対応するのは「必須」スコープのみ:
+/// 数値の表示形式コードを適用する。対応するのは「必須」スコープ:
 /// 桁区切り（`,`を含む書式）・小数点以下桁数（`.`以降の`0`/`#`の個数）・
-/// パーセンテージ（`%`を含む書式）。それ以外の記号（通貨記号・条件付き書式の
-/// セクション分岐等）はストリップ（無視）する。
+/// パーセンテージ（`%`を含む書式）、および`"..."`/`\X`によるリテラルテキストの
+/// 埋め込み（例: `"("#"ヶ月間)"`、実データで頻出することがIssue #45で判明したため
+/// `format_date`の`render_date_tokens`（PR #44）と同じ構文解釈をこちらにも追加した）。
+/// それ以外の記号（通貨記号・条件付き書式のセクション分岐等）はストリップ（無視）する。
 fn format_number(n: f64, format_code: Option<&str>) -> String {
     let code = match format_code {
         Some(code) if !code.is_empty() && code != "General" => code,
@@ -102,7 +104,52 @@ fn format_number(n: f64, format_code: Option<&str>) -> String {
     if is_percentage {
         formatted.push('%');
     }
-    formatted
+
+    render_number_literals(code, &formatted)
+}
+
+/// 書式コード中のリテラルテキスト（`"..."`・`\X`）を出力へ展開しつつ、それ以外の
+/// 文字（`#`/`0`/`,`/`.`/`%`等、数値のプレースホルダ）が現れた最初の位置に
+/// フォーマット済みの数値文字列を1回だけ挿入する。桁区切り・小数点以下桁数・
+/// パーセンテージは`formatted_number`側で既に確定しているため、プレースホルダ文字
+/// 自体の個別解釈は行わない（`render_date_tokens`と異なり、日付のように複数の
+/// トークン種別が同時に登場することはなく、数値は常に単一の値であるため）。
+fn render_number_literals(code: &str, formatted_number: &str) -> String {
+    let chars: Vec<char> = code.chars().collect();
+    let mut out = String::new();
+    let mut number_inserted = false;
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        if c == '"' {
+            i += 1;
+            while i < chars.len() && chars[i] != '"' {
+                out.push(chars[i]);
+                i += 1;
+            }
+            i += 1; // 閉じの `"` を読み飛ばす（見つからなくても範囲外アクセスにはならない）
+            continue;
+        }
+        if c == '\\' {
+            i += 1;
+            if i < chars.len() {
+                out.push(chars[i]);
+                i += 1;
+            }
+            continue;
+        }
+        if !number_inserted {
+            out.push_str(formatted_number);
+            number_inserted = true;
+        }
+        i += 1;
+    }
+    if !number_inserted {
+        // 書式コード全体がリテラルテキストのみだった場合のフォールバック
+        // （通常のExcel書式コードでは起こらないが、数値そのものを失わないようにする）。
+        out.push_str(formatted_number);
+    }
+    out
 }
 
 /// `format!("{value:.N$}")`に渡す小数点以下桁数の上限。`f64`の有効桁数（約17桁）を
@@ -334,6 +381,26 @@ mod tests {
     fn number_negative_thousands_separator() {
         let c = cell(CellValue::Number(-1234.5), Some("#,##0.0"));
         assert_eq!(c.display_text(), "-1,234.5");
+    }
+
+    #[test]
+    fn number_quoted_literal_text_surrounds_the_value() {
+        // 実データ（Issue #45）で判明した頻出パターン: 期間を「(12ヶ月間)」のように
+        // 数値の前後にリテラルテキストを埋め込む書式。
+        let c = cell(CellValue::Number(12.0), Some(r##""("#"ヶ月間)""##));
+        assert_eq!(c.display_text(), "(12ヶ月間)");
+    }
+
+    #[test]
+    fn number_quoted_literal_text_as_suffix_only() {
+        let c = cell(CellValue::Number(1500.0), Some(r#"#,##0"円""#));
+        assert_eq!(c.display_text(), "1,500円");
+    }
+
+    #[test]
+    fn number_backslash_escaped_literal_char_is_unwrapped() {
+        let c = cell(CellValue::Number(5.0), Some(r"0\個"));
+        assert_eq!(c.display_text(), "5個");
     }
 
     #[test]
