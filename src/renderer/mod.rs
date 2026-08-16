@@ -87,7 +87,16 @@ fn render_body(doc: &domain::Document, heading_offset: u8) -> String {
     while i < doc.rows.len() {
         match doc.rows[i].kind {
             domain::RowKind::Flow => {
-                parts.push(flow::render_row(&doc.rows[i], heading_offset));
+                // 全セルが空の行（blocksが空）は、GridPaperStrategy/TabularStrategyの
+                // classify_row（PR #21/#38）によりFlowに分類されるが、render_rowは
+                // 常に空文字列を返す。これをそのままpartsに積むと、実データの範囲外まで
+                // 広い使用範囲（used range）を持つシート（例: 書式だけが遠くの行まで
+                // 適用されている実務ファイル）で、大量の空文字列partsが`\n\n`で
+                // 連結され無意味な空行の羅列になってしまうため、何も出力しない行は
+                // partに積まない。
+                if !doc.rows[i].blocks.is_empty() {
+                    parts.push(flow::render_row(&doc.rows[i], heading_offset));
+                }
                 i += 1;
             }
             domain::RowKind::TableRow => {
@@ -189,6 +198,33 @@ mod tests {
             rows: vec![],
         };
         assert_eq!(render_body(&doc, 0), "");
+    }
+
+    /// 実データで判明した回帰: Excelの使用範囲(used range)が実データより大幅に広い
+    /// シート（書式だけが遠くの行まで適用されている実務ファイル等）では、実データを
+    /// 超えた範囲の全行が完全に空の`Flow`行（blocksが空、PR #21/#38）になる。
+    /// これらを1行ごとに空文字列のpartとしてpushしてしまうと、大量の空行が
+    /// `\n\n`で連結され出力される（大量の空行の中に実質何も情報が無いため、
+    /// ユーザーからは「何も返ってこない」ように見える）。
+    #[test]
+    fn render_body_skips_consecutive_fully_empty_flow_rows() {
+        let empty_row = || domain::RenderedRow {
+            kind: domain::RowKind::Flow,
+            blocks: vec![],
+        };
+        let doc = domain::Document {
+            sheet_name: "S".into(),
+            rows: vec![
+                domain::RenderedRow {
+                    kind: domain::RowKind::Flow,
+                    blocks: vec![flow_block("content", None)],
+                },
+                empty_row(),
+                empty_row(),
+                empty_row(),
+            ],
+        };
+        assert_eq!(render_body(&doc, 0), "content");
     }
 
     #[test]
