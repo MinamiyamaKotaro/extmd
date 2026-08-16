@@ -28,7 +28,7 @@ CLIツール」（[要件定義書6章](../requirement/requirements.md#6-非機�
 | 3 | スプレッドシート再取込み時の数式インジェクション (CSV/Formula Injection) | Low | [renderer/escape.md](../design/renderer/escape.md), [renderer/table.md](../design/renderer/table.md) | 未対応（Low、別Issueで検討） |
 | 4 | 出力ファイル名サニタイズが制御文字・Unicode方向操作文字を考慮していない | Low | [renderer/output.md](../design/renderer/output.md) | 未対応（Low、別Issueで検討） |
 | 5 | XML/ZIPパーサ依存によるサプライチェーンリスク（XXE・zip bomb耐性が未検証） | Medium | [reader/mod.md](../design/reader/mod.md) | 反映済み（CI監査は未着手） |
-| 6 | エラーメッセージによる内部情報の断片的な漏洩 | Low | [cli.md 5章](../design/cli.md#5-エラーハンドリングと終了コード) | 未対応（Low、別Issueで検討） |
+| 6 | エラーメッセージによる内部情報の断片的な漏洩 | Low | [cli.md 5章](../design/cli.md#5-エラーハンドリングと終了コード) | 反映済み（SECURITY.mdでAPI化時の対処を規定） |
 | 7 | `--clean`・書き込み処理のシンボリックリンク追従 | Low | [cli.md 3.2節](../design/cli.md#32-outputtarget-の構築とタイムスタンプクリーンアップ), [renderer/output.md](../design/renderer/output.md) | 未対応（Low、別Issueで検討） |
 
 Medium/Medium-High（1・2・5）は[Issue #14](https://github.com/MinamiyamaKotaro/extmd/issues/14)での検討を経て設計書に反映済み。Low評価の4件（3・4・6・7）はIssue #14のスコープ外としており、対応する場合は別途Issueを起票する。
@@ -299,6 +299,8 @@ ConvertError::Reader(e) => write!(f, "Error: Failed to read Excel file: {}", e),
   明記しておくことを推奨する。将来的にサーバーサイド用途を検討する場合は、
   内部エラーの詳細はログにのみ出力し、利用者向けメッセージは定型化する設計へ
   切り替える必要がある。
+
+**対応状況**: Web APIなどのサーバーサイド環境に本ツールを統合する場合、エラーメッセージをサニタイズして直接レスポンスに含めない方針を [SECURITY.md](../../SECURITY.md) に明記しました。
 
 ---
 
