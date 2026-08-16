@@ -179,6 +179,34 @@ fn render_date_tokens(d: NaiveDateTime, code: &str) -> String {
     let mut i = 0;
     while i < chars.len() {
         let c = chars[i];
+
+        // Excelの書式コードでは `"..."` は引用符自体を出力に含めず、内部の文字列を
+        // そのまま挿入する構文。`yyyy"年"m"月"`のような和文の区切り文字を埋め込む
+        // 書式で頻出するため、引用符を読み飛ばして中身だけを出力する
+        // （実データで引用符自体が出力に混入する不具合が判明したため対応。
+        // reader/date.mdのcontains_date_token（トークン検出用）と同じ構文解釈を、
+        // 実際の値のフォーマット側にも揃える）。
+        if c == '"' {
+            i += 1;
+            while i < chars.len() && chars[i] != '"' {
+                out.push(chars[i]);
+                i += 1;
+            }
+            i += 1; // 閉じの `"` を読み飛ばす（見つからなくても範囲外アクセスにはならない）
+            continue;
+        }
+
+        // `\X` はX（バックスラッシュの直後の1文字）だけを文字通り出力する
+        // （バックスラッシュ自体は出力しない）。
+        if c == '\\' {
+            i += 1;
+            if i < chars.len() {
+                out.push(chars[i]);
+                i += 1;
+            }
+            continue;
+        }
+
         let run_len = chars[i..].iter().take_while(|&&ch| ch == c).count();
         match c {
             'y' | 'Y' => {
@@ -349,5 +377,29 @@ mod tests {
             .unwrap();
         let c = cell(CellValue::Date(dt), Some("yyyy--mm--dd"));
         assert_eq!(c.display_text(), "2026--08--15");
+    }
+
+    #[test]
+    fn date_quoted_literal_text_is_unwrapped() {
+        // 実データで判明した不具合: `yyyy"年"m"月"`のような、和文の区切り文字を
+        // 引用符で囲んだ書式コードで、引用符自体（`"`）がそのまま出力に混入していた。
+        // Excelの書式コード構文では `"..."` は引用符を含まず中身だけを挿入する。
+        let dt = NaiveDate::from_ymd_opt(2019, 1, 1)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap();
+        let c = cell(CellValue::Date(dt), Some(r#"yyyy"年"m"月""#));
+        assert_eq!(c.display_text(), "2019年1月");
+    }
+
+    #[test]
+    fn date_backslash_escaped_literal_char_is_unwrapped() {
+        // `\X`はバックスラッシュを出力に含めず、Xだけを文字通り出力する。
+        let dt = NaiveDate::from_ymd_opt(2026, 8, 15)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap();
+        let c = cell(CellValue::Date(dt), Some(r"yyyy\年mm\月"));
+        assert_eq!(c.display_text(), "2026年08月");
     }
 }
