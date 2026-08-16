@@ -16,7 +16,9 @@ fn build_bench_sheet(rows: u32, cols: u32, path: &Path) {
             let cell = ws.cell_mut((c, r));
             if c % 2 == 0 {
                 cell.set_value_number(12.34);
-                cell.style_mut().numbering_format_mut().set_format_code("0.00");
+                cell.style_mut()
+                    .numbering_format_mut()
+                    .set_format_code("0.00");
             } else {
                 cell.set_value(format!("row{r}_col{c}"));
             }
@@ -24,7 +26,13 @@ fn build_bench_sheet(rows: u32, cols: u32, path: &Path) {
     }
 
     umya_spreadsheet::writer::xlsx::write(&book, path).unwrap();
-    println!("Generated: {} ({} x {} = {} cells)", path.display(), rows, cols, rows * cols);
+    println!(
+        "Generated: {} ({} x {} = {} cells)",
+        path.display(),
+        rows,
+        cols,
+        rows * cols
+    );
 }
 
 fn main() {
