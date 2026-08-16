@@ -19,23 +19,35 @@ pub(in crate::renderer) fn render_table(rows: &[domain::RenderedRow]) -> String 
         .unwrap_or(0);
 
     let mut lines = Vec::with_capacity(rows.len() + 1);
+    let mut prev_cells: Option<Vec<String>> = None;
     for (i, row) in rows.iter().enumerate() {
-        lines.push(render_data_row(row, col_count));
+        let cells = row_cells(row, col_count);
+        // 3.1章: ヘッダー行（i == 0）自体は比較対象にせず、i > 1のデータ行同士でのみ
+        // 完全一致による重複を除去する
+        if i > 1 && prev_cells.as_ref() == Some(&cells) {
+            continue;
+        }
+        lines.push(render_data_row(&cells));
         if i == 0 {
             // 4章: グループ先頭行をヘッダー行として扱う
             lines.push(alignment_row(col_count));
         }
+        prev_cells = Some(cells);
     }
     lines.join("\n")
 }
 
-fn render_data_row(row: &domain::RenderedRow, col_count: usize) -> String {
+fn row_cells(row: &domain::RenderedRow, col_count: usize) -> Vec<String> {
     let mut cells = vec![String::new(); col_count];
     for block in &row.blocks {
         // 3章: 結合範囲は左端セル（col_start）にのみ値を出力し、
         // col_start+1..=col_end は空セルのままにする
         cells[block.col_start] = escape::escape_table_cell(&block.text);
     }
+    cells
+}
+
+fn render_data_row(cells: &[String]) -> String {
     format!("| {} |", cells.join(" | "))
 }
 
@@ -63,6 +75,20 @@ Markdownのパイプテーブルはネイティブな`colspan`構文を持たな
 （[Issue #46](https://github.com/MinamiyamaKotaro/extmd/issues/46)）、値を空欄にせず
 複製する方針に変更した（何も表示しないより、同じ値が複数行に渡って表示される方が
 可読性が高いという判断。セル結合のビジュアル自体はMarkdownで再現できないため対象外のまま）。
+
+### 3.1 全列が完全一致するデータ行の除去
+
+Excel方眼紙的な業務フォーマット（スキルシート等）では、1件の論理レコードを複数行の高さに
+見せるためだけに、多くの列（プロジェクト番号・期間・使用技術等）が同じ行範囲でまとめて縦結合
+されていることがある。この場合、3章の複製方針を複数列に単純適用すると、実質的な差分を
+持たない行がそのままMarkdownテーブルの行として繰り返し出力され、冗長になる（実データ
+`tests/fixtures/complex.xlsx`で確認された挙動）。
+
+これを避けるため、`render_table`はヘッダー行（`i == 0`）を除く各データ行について、直前の
+データ行と全列の値が完全に一致する場合はその行を出力しない。ヘッダー行自体は比較対象に
+含めない（先頭データ行がたまたまヘッダーと同じ値であっても出力する）。この結果、ある列だけが
+異なる行（例: プロジェクト最終行だけ期間が「10ヶ月」のような要約値に変わる）は、その列の差分が
+あるため引き続き独立した行として出力される。
 
 ## 4. ヘッダー行の扱いについての設計判断
 
