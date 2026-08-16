@@ -1,5 +1,10 @@
 # extmd
 
+[![Rust CI](https://github.com/MinamiyamaKotaro/extmd/actions/workflows/rust-ci.yml/badge.svg)](https://github.com/MinamiyamaKotaro/extmd/actions/workflows/rust-ci.yml)
+[![extmd on crates.io](https://img.shields.io/crates/v/extmd.svg)](https://crates.io/crates/extmd)
+[![extmd on docs.rs](https://docs.rs/extmd/badge.svg)](https://docs.rs/extmd)
+[![codecov](https://codecov.io/gh/MinamiyamaKotaro/extmd/branch/master/graph/badge.svg)](https://codecov.io/gh/MinamiyamaKotaro/extmd)
+
 Excelファイル（.xlsx）をMarkdownに変換するCLIツール（Rust製）。
 
 > **ステータス: v1実装完了。** 設計（要件定義・アーキテクチャ設計・詳細設計・セキュリティレビュー）

@@ -7,6 +7,10 @@ name: Rust CI
 #
 # 現時点ではCargoプロジェクト自体が未作成（Issue #17）のため、対象パスに変更がない
 # 限りこのワークフローは起動しない。
+#
+# masterへのpushでも実行するのは、READMEのGitHub Actionsバッジ（デフォルトブランチの
+# 最新ビルド状況）を意味のある値にするため（PRのみだとmaster上での実行記録が存在せず
+# バッジが空表示になる）。
 on:
   pull_request:
     paths:
@@ -14,9 +18,17 @@ on:
       - "**/Cargo.toml"
       - "**/Cargo.lock"
       - ".github/workflows/rust-ci.yml"
+  push:
+    branches:
+      - master
+    paths:
+      - "**/*.rs"
+      - "**/Cargo.toml"
+      - "**/Cargo.lock"
+      - ".github/workflows/rust-ci.yml"
 
 concurrency:
-  group: rust-ci-${{ github.workflow }}-${{ github.event.pull_request.number }}
+  group: rust-ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 permissions:
