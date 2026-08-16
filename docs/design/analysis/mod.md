@@ -80,12 +80,17 @@ fn resolve_blocks(sheet: &domain::Sheet, row_idx: usize, strategy: &dyn Analysis
 
         if row[col].is_empty() {
             // 縦方向のネイティブ結合セル（rowspan相当）の、左上以外の行に達した場合。
-            // Markdownのパイプテーブルはrowspanを持たないため、結合範囲の左上セルの値を
-            // この行にも複製して出力する（Issue #46。空欄のままだとデータが欠けて見える）。
+            // Markdownのパイプテーブルはrowspanを持たないため、横方向の結合（colspan）と
+            // 同じ方針で値は左上セルの行にのみ出力し、この行では空欄にする（Issue #52）。
+            // ただしBlock自体は生成し、textだけ空にする。生成をやめるとこの行のblocksが
+            // 空になり得、classify_rowがFlowと誤判定してテーブルのグループ化が分断される
+            // （renderer/table.md 3.1章）。
             if let Some(merge) = covering_merge(sheet, row_idx, col) {
                 let top_left = sheet.cells.get(merge.row_start, merge.col_start)
                     .expect("MergeRange must be within cells bounds (Sheet invariant)");
-                blocks.push(build_block(top_left, row_idx, merge.col_start, merge.col_end, domain::BlockSource::NativeMerge, strategy));
+                let mut block = build_block(top_left, row_idx, merge.col_start, merge.col_end, domain::BlockSource::NativeMerge, strategy);
+                block.text.clear();
+                blocks.push(block);
                 col = merge.col_end + 1;
                 continue;
             }
@@ -166,17 +171,20 @@ fn build_block(
   結合範囲の左上セルであるものを探すヘルパー（このファイル内のプライベート関数）。
 - `covering_merge`は`native_merge_at`と異なり、左上セルに限らず指定座標を含む結合範囲を
   返す。`is_in_native_merge`（`trailing_empty`用の真偽値判定）と、縦方向の結合セルの
-  複製（`resolve_blocks`本体、Issue #46）の両方から使われる共通ヘルパー。
+  後続行の判定（`resolve_blocks`本体、Issue #52）の両方から使われる共通ヘルパー。
 - `trailing_empty`は「右隣から連続する空セル、ただしネイティブ結合セルの領域は除く」に絞る
   ヘルパー（[strategy.md 1章](strategy.md#1-overflowcontext--overflowdecision-の配置場所についての設計判断)の
   `OverflowContext::following_empty_cells`の契約を満たすため）。ネイティブ結合セルの左上が
   空文字（値なし）の場合、単純な空セル判定だけでは結合範囲の内部まで空セル列として
   収集してしまうため、`is_in_native_merge`で境界チェックする。
 - 結合範囲の左上以外のセル（`row[col].is_empty()`で検出）に達した場合、単に読み飛ばすと
-  Markdownのパイプテーブルにはその行だけ値が欠けて見える（rowspanを表現できないため）。
+  この行の`blocks`が空になり得、`classify_row`が`Flow`と誤判定してテーブルのグループ化が
+  分断されてしまう（[renderer/table.md 3.1章](../renderer/table.md#31-全列が縦結合の後続行であるデータ行の除去)）。
   そこで`covering_merge`でその行が縦方向の結合範囲内かどうかを判定し、範囲内であれば
-  左上セルの値を複製した`Block`をこの行にも生成する（[Issue #46](https://github.com/MinamiyamaKotaro/extmd/issues/46)。
-  [renderer/table.md 3章](../renderer/table.md#3-結合セルcol_startcol_endの表現)参照）。
+  左上セルと同じ`col_start`/`col_end`を持つが`text`が空の`Block`をこの行にも生成する
+  （[Issue #52](https://github.com/MinamiyamaKotaro/extmd/issues/52)）。値そのものは
+  横方向の結合（colspan）と同じく左上セルの行にしか出力しない
+  （[renderer/table.md 3章](../renderer/table.md#3-結合セルcol_startcol_endの表現)参照）。
 
 ## 5. domain層への変更: `Block::heading_level` の追加
 

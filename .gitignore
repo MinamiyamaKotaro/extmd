@@ -11,3 +11,6 @@
 # 含めない）。tests/fixtures/配下のその他の.xlsx（grid_paper.xlsx等、機械生成した
 # サンプル）は個人情報を含まないため引き続きバージョン管理の対象とする。
 tests/fixtures/complex.xlsx
+
+# 動作確認のためにCLIをローカル実行して生成した出力ファイル置き場。
+tests/fixtures/out/

@@ -19,12 +19,11 @@ pub(in crate::renderer) fn render_table(rows: &[domain::RenderedRow]) -> String 
         .unwrap_or(0);
 
     let mut lines = Vec::with_capacity(rows.len() + 1);
-    let mut prev_cells: Option<Vec<String>> = None;
     for (i, row) in rows.iter().enumerate() {
         let cells = row_cells(row, col_count);
-        // 3.1章: ヘッダー行（i == 0）自体は比較対象にせず、i > 1のデータ行同士でのみ
-        // 完全一致による重複を除去する
-        if i > 1 && prev_cells.as_ref() == Some(&cells) {
+        // 3.1章: 全列が縦結合の後続行（空欄）である行は出力しない。ヘッダー行（i == 0）は
+        // 常に出力する
+        if i > 0 && cells.iter().all(String::is_empty) {
             continue;
         }
         lines.push(render_data_row(&cells));
@@ -32,7 +31,6 @@ pub(in crate::renderer) fn render_table(rows: &[domain::RenderedRow]) -> String 
             // 4章: グループ先頭行をヘッダー行として扱う
             lines.push(alignment_row(col_count));
         }
-        prev_cells = Some(cells);
     }
     lines.join("\n")
 }
@@ -66,29 +64,41 @@ Markdownのパイプテーブルはネイティブな`colspan`構文を持たな
 提案された方針をそのまま採用）。
 
 縦方向の結合（rowspan相当）はMarkdownのパイプテーブルにネイティブな構文がないため、
-`table.rs`自身はrowspanを表現しない。その代わり`analysis`層（[analysis/mod.md 4章](../analysis/mod.md#4-行単位のオーケストレーション-はみ出しネイティブ結合見出し判定)）が、
-結合範囲の左上セル以外の各行についても左上セルの値を複製した`Block`
-（`source: BlockSource::NativeMerge`）を生成する（[analysis/mod.md 4章](../analysis/mod.md#4-行単位のオーケストレーション-はみ出しネイティブ結合見出し判定)）。
-`table.rs`から見れば結合範囲の全ての行に同じ値を持つ独立したブロックが存在するだけであり、
-上記の通常の`col_start`書き込みロジックがそのまま適用される。当初は縦方向の結合をv1スコープ外
-としていたが、実データで業務フォーマット（議事録等）に頻出することが判明したため
-（[Issue #46](https://github.com/MinamiyamaKotaro/extmd/issues/46)）、値を空欄にせず
-複製する方針に変更した（何も表示しないより、同じ値が複数行に渡って表示される方が
-可読性が高いという判断。セル結合のビジュアル自体はMarkdownで再現できないため対象外のまま）。
+`table.rs`自身はrowspanを表現しない。横方向の結合（colspan）と同じ方針を採り、値は
+結合範囲の左上セルの行にのみ出力し、それ以外の行では空欄にする。当初（[Issue #46](https://github.com/MinamiyamaKotaro/extmd/issues/46)）は
+「何も表示しないより複製する方が可読性が高い」という判断で左上セルの値を複製していたが、
+Excel方眼紙的な業務フォーマット（スキルシート等、実データ`tests/fixtures/complex.xlsx`）では
+1件の論理レコードを複数行の高さに見せるためだけに多くの列がまとめて縦結合されており、
+複製方針だと実質差分の無い行がテーブルに繰り返し出力されて冗長になることが判明したため、
+複製せず空欄にする方針へ変更した（[Issue #52](https://github.com/MinamiyamaKotaro/extmd/issues/52)）。
 
-### 3.1 全列が完全一致するデータ行の除去
+`analysis`層（[analysis/mod.md 4章](../analysis/mod.md#4-行単位のオーケストレーション-はみ出しネイティブ結合見出し判定)）は、
+結合範囲の左上セル以外の各行についても`Block`（`source: BlockSource::NativeMerge`、
+`col_start`/`col_end`は結合範囲のまま）は生成し続けるが、`text`は空文字にする。`table.rs`
+から見れば、結合範囲の後続行にも「値が空文字のブロック」が存在するだけであり、上記の通常の
+`col_start`書き込みロジックがそのまま適用されて空欄セルになる。Blockの生成自体は続ける理由は
+3.1章を参照。
 
-Excel方眼紙的な業務フォーマット（スキルシート等）では、1件の論理レコードを複数行の高さに
-見せるためだけに、多くの列（プロジェクト番号・期間・使用技術等）が同じ行範囲でまとめて縦結合
-されていることがある。この場合、3章の複製方針を複数列に単純適用すると、実質的な差分を
-持たない行がそのままMarkdownテーブルの行として繰り返し出力され、冗長になる（実データ
-`tests/fixtures/complex.xlsx`で確認された挙動）。
+### 3.1 全列が縦結合の後続行であるデータ行の除去
 
-これを避けるため、`render_table`はヘッダー行（`i == 0`）を除く各データ行について、直前の
-データ行と全列の値が完全に一致する場合はその行を出力しない。ヘッダー行自体は比較対象に
-含めない（先頭データ行がたまたまヘッダーと同じ値であっても出力する）。この結果、ある列だけが
-異なる行（例: プロジェクト最終行だけ期間が「10ヶ月」のような要約値に変わる）は、その列の差分が
-あるため引き続き独立した行として出力される。
+3章の方針により、縦結合の後続行では対象列が空欄になる。Excel方眼紙的な業務フォーマットでは、
+1つの論理行の全列が縦結合の後続行になり、その行が実質的に何の情報も持たない（空欄セルだけの
+行になる）ケースがある。これをそのままMarkdownテーブルの行として出力すると、意味のない
+空行（`| | | |`等）がテーブル中に現れてしまう。
+
+これを避けるため、`render_table`はヘッダー行（`i == 0`）を除く各データ行について、全列が
+空文字である場合はその行を出力しない。1列でも値を持つ行（例: プロジェクト最終行だけ期間が
+「10ヶ月」のような要約値に変わる行）は、その列の値を保持するため引き続き出力される。
+
+なお`Block`自体（テキストは空でも）は`analysis`層が結合範囲の全行に生成し続ける（3章）。
+これは、ある行の全列が縦結合の後続行であっても`blocks`は空にならないようにするためで、
+`TabularStrategy`/`GridPaperStrategy`の`classify_row`（[strategies/tabular.md](../analysis/strategies/tabular.md)/
+[strategies/grid_paper.md](../analysis/strategies/grid_paper.md)）は`blocks`が空の行を`Flow`に
+分類する。もし`Block`ごと生成しなければ、全列が縦結合の後続行である行が`Flow`と誤判定され、
+`render_body`（[mod.md 6章](mod.md#6-documentから本文への組み立て)）の`TableRow`グループ化が
+そこで分断されてしまう（後続のテーブル行がヘッダー行の無い新しいテーブルとして出力される）。
+その分断を防ぐため、行の構造的な分類は`analysis`層のBlock生成で担保し、値の重複除去は
+`table.rs`側の空欄行スキップで担保する、という役割分担にしている。
 
 ## 4. ヘッダー行の扱いについての設計判断
 
