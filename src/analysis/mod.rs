@@ -68,22 +68,33 @@ fn resolve_blocks(
 
         if row[col].is_empty() {
             // 縦方向のネイティブ結合セル（rowspan相当）の、左上以外の行に達した場合。
-            // Markdownのパイプテーブルはrowspanを持たないため、結合範囲の左上セルの
-            // 値をこの行にも複製して出力する（Issue #46。複製せず空欄のままにすると、
-            // データが欠けているように見えてしまうため）。
+            // Markdownのパイプテーブルはrowspanを持たないため、横方向の結合（colspan、
+            // build_blockの呼び出し元コメント参照）と同じ方針で、値は左上セルの行にのみ
+            // 出力し、この行では空欄にする（Issue #52。全列が縦結合される業務フォーマット
+            // では、値を複製すると実質差分のない行がテーブルに繰り返し出力されて冗長になる
+            // ため、Issue #46の複製方針を撤回した）。
+            //
+            // ただしBlock自体はここで生成し、テキストのみ空にする。生成をやめてしまうと、
+            // 「全列が縦結合されている行」でこの行のblocksが空になり、classify_row
+            // （tabular.md/grid_paper.md）がFlowと誤判定してテーブルのグループ化が
+            // 分断されてしまう（render_body、renderer/mod.md）。col_start/col_endは
+            // 結合範囲のまま保持することで、列数（col_count）や行の構造的な扱いは
+            // 左上セルの行と変わらないようにする。
             if let Some(merge) = covering_merge(sheet, row_idx, col) {
                 let top_left = sheet
                     .cells
                     .get(merge.row_start, merge.col_start)
                     .expect("MergeRange must be within cells bounds (Sheet invariant)");
-                blocks.push(build_block(
+                let mut block = build_block(
                     top_left,
                     row_idx,
                     merge.col_start,
                     merge.col_end,
                     domain::BlockSource::NativeMerge,
                     strategy,
-                ));
+                );
+                block.text.clear();
+                blocks.push(block);
                 col = merge.col_end + 1;
                 continue;
             }
@@ -338,8 +349,8 @@ mod tests {
     }
 
     #[test]
-    fn resolve_blocks_duplicates_vertical_merge_value_on_continuation_rows() {
-        // 縦方向のネイティブ結合セル（rowspan相当、Issue #46）: A列は結合なしで
+    fn resolve_blocks_blanks_vertical_merge_continuation_rows() {
+        // 縦方向のネイティブ結合セル（rowspan相当、Issue #52）: A列は結合なしで
         // 各行に値が入り、B列は行0-2が"merged"というテキストで縦結合されている。
         let sheet = domain::Sheet {
             name: "s".into(),
@@ -375,15 +386,18 @@ mod tests {
             assert_eq!(
                 blocks.len(),
                 2,
-                "row {row_idx} should also see the duplicated merge value"
+                "row {row_idx} should still get a placeholder block so the row keeps being classified as a table row"
             );
-            assert_eq!(blocks[1].text, "merged");
+            assert_eq!(
+                blocks[1].text, "",
+                "continuation row must not repeat the merged value"
+            );
             assert_eq!(blocks[1].source, domain::BlockSource::NativeMerge);
             assert_eq!(blocks[1].col_start, 1);
             assert_eq!(blocks[1].col_end, 1);
             assert_eq!(
                 blocks[1].row, row_idx,
-                "duplicated block should report the current row, not the merge's top row"
+                "placeholder block should report the current row, not the merge's top row"
             );
         }
     }

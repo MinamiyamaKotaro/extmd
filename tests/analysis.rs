@@ -142,13 +142,15 @@ fn analyze_resolves_a_row_and_column_spanning_merge_in_the_meeting_minutes_fixtu
     assert_eq!(session_row.blocks[1].col_end, 2);
     assert_eq!(session_row.blocks[2].text, "田中");
 
-    // 行6(0-indexで5): 結合範囲の2行目はネイティブ結合の左上セルではないが、Markdownの
-    // パイプテーブルはrowspanを持たないため、左上セルの値("資料説明")をこの行にも複製して
-    // 出力する（Issue #46）。A6"15:00" / B6:C6"資料説明"(複製) / D6"鈴木"の3ブロック。
+    // 行6(0-indexで5): 結合範囲の2行目はネイティブ結合の左上セルではない。Markdownの
+    // パイプテーブルはrowspanを持たないため、値は左上セルの行にのみ出力し、この行では
+    // 空欄にする（横方向の結合と同じ方針、Issue #52）。ただしテーブルのグループ化が
+    // 分断されないよう、ブロック自体（col_start/col_end/source）は変わらず生成され、
+    // textだけが空になる。A6"15:00" / B6:C6""(空欄) / D6"鈴木"の3ブロック。
     let continuation_row = &doc.rows[5];
     assert_eq!(continuation_row.blocks.len(), 3);
     assert_eq!(continuation_row.blocks[0].text, "15:00");
-    assert_eq!(continuation_row.blocks[1].text, "資料説明");
+    assert_eq!(continuation_row.blocks[1].text, "");
     assert_eq!(continuation_row.blocks[1].source, BlockSource::NativeMerge);
     assert_eq!(continuation_row.blocks[1].col_start, 1);
     assert_eq!(continuation_row.blocks[1].col_end, 2);
