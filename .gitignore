@@ -14,3 +14,6 @@ tests/fixtures/complex.xlsx
 
 # 動作確認のためにCLIをローカル実行して生成した出力ファイル置き場。
 tests/fixtures/out/
+
+# Benchmark files
+/tests/fixtures/bench_*.xlsx
