@@ -1,6 +1,6 @@
 [package]
 name = "extmd"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "Excel (.xlsx) to Markdown converter with overflow-cell merging support."
 license = "MIT"
