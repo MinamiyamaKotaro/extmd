@@ -49,14 +49,19 @@ cargo install extmd
 詳細なCLIオプション一覧は`extmd --help`、または[CLI設計書](docs/design/cli.md)を参照してください。
 
 ```sh
-# 標準出力へ変換結果を出力（戦略は自動判定）
+# ターミナル画面に変換結果を表示する（-oを指定しない場合。解析戦略は自動判定）
 extmd input.xlsx
 
-# ファイルへ出力し、戦略を明示指定
-extmd input.xlsx --strategy grid-paper -o output.md
+# 結果をファイルへ保存する（-o 出力先ファイル名）
+extmd input.xlsx -o output.md
 
-# シートごとに別ファイルへ分割出力
+# シートごとに別々のMarkdownファイルへ分割して保存する（-o 出力先ディレクトリ名）
 extmd input.xlsx --split -o output_dir
+
+# 解析戦略を明示的に指定する（省略時はシートの内容から自動判定）
+# grid-paper: Excel方眼紙向け（はみ出し文字列を結合してから変換）
+# tabular   : 通常の集計表向け（セルをそのままテーブルとして変換）
+extmd input.xlsx --strategy grid-paper -o output.md
 ```
 
 ## 利用上の注意

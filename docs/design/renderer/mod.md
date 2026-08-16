@@ -142,7 +142,16 @@ fn render_body(doc: &domain::Document, heading_offset: u8) -> String {
     while i < doc.rows.len() {
         match doc.rows[i].kind {
             domain::RowKind::Flow => {
-                parts.push(flow::render_row(&doc.rows[i], heading_offset));
+                // 全セルが空の行（blocksが空）はFlowに分類される（PR #21/#38）が、
+                // render_rowは常に空文字列を返す。実データの使用範囲（used range）が
+                // 実際のデータより大幅に広いシート（書式だけが遠くの行まで適用されている
+                // 実務ファイル等）では、この種の行が数百〜数千件連続することがあり、
+                // 素朴に毎行1つのpartとしてpushすると空文字列partの連続を`\n\n`で
+                // 連結した大量の空行になってしまう（実データで判明、Issue報告）。
+                // 何も出力しない行はpartに積まない。
+                if !doc.rows[i].blocks.is_empty() {
+                    parts.push(flow::render_row(&doc.rows[i], heading_offset));
+                }
                 i += 1;
             }
             domain::RowKind::TableRow => {
@@ -164,7 +173,8 @@ fn render_body(doc: &domain::Document, heading_offset: u8) -> String {
 ## 7. 未確定事項
 
 - `render_concatenated`/`render_body`が挟む区切り（`\n\n`）や末尾改行の厳密な仕様は
-  実装・スナップショットテストの段階で確定させる
+  実装・スナップショットテストの段階で確定させる。実データ検証により、全セルが空の
+  `Flow`行はpartとして積まない（6章参照）という仕様は確定した
 - ~~`SplitDirectory`時、シートが1件も存在しない（空のワークブック）場合の挙動
   （空ディレクトリを作るだけで正常終了するか、エラーにするか）~~
   → `renderer::render`自体は`documents`が空でもエラーにせず空出力/空ディレクトリを
