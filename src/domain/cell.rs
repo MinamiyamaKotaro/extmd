@@ -108,12 +108,24 @@ fn format_number(n: f64, format_code: Option<&str>) -> String {
     render_number_literals(code, &formatted)
 }
 
-/// 書式コード中のリテラルテキスト（`"..."`・`\X`）を出力へ展開しつつ、それ以外の
-/// 文字（`#`/`0`/`,`/`.`/`%`等、数値のプレースホルダ）が現れた最初の位置に
+/// 書式コード中のリテラルテキスト（`"..."`・`\X`）を出力へ展開しつつ、数値の
+/// プレースホルダ文字（`#`/`0`/`?`/`,`/`.`/`%`）が現れた最初の位置に
 /// フォーマット済みの数値文字列を1回だけ挿入する。桁区切り・小数点以下桁数・
 /// パーセンテージは`formatted_number`側で既に確定しているため、プレースホルダ文字
 /// 自体の個別解釈は行わない（`render_date_tokens`と異なり、日付のように複数の
 /// トークン種別が同時に登場することはなく、数値は常に単一の値であるため）。
+///
+/// 引用符・バックスラッシュエスケープ・プレースホルダのいずれでもない文字
+/// （丸括弧や単位記号など）はそのまま出力へ通す。プレースホルダ文字だけを
+/// 読み飛ばす対象にしないと、`((0))`のような「数値を囲む未引用のリテラル文字」が
+/// 出力から丸ごと欠落してしまう（レビュー指摘、実データの会計書式
+/// `#,##0;(#,##0)` 等で頻出する丸括弧を想定）。
+///
+/// `[...]`（色・ロケール指定、例: `[Red]`/`[$-411]`）は[domain/cell.md 4章](../../docs/design/domain/cell.md)の
+/// 「対象外」方針の通りストリップする。また`;`（正数/負数/ゼロ/文字列のセクション区切り）は
+/// v1でセクション分岐を実装していないため、以降のセクションを解釈せず打ち切る
+/// （区切り文字自体をリテラルとして素通しすると、例えば`#,##0;(#,##0)`の負数セクションの
+/// 丸括弧が正数値に対しても`;(1,234)`のように混入してしまう）。
 fn render_number_literals(code: &str, formatted_number: &str) -> String {
     let chars: Vec<char> = code.chars().collect();
     let mut out = String::new();
@@ -138,10 +150,24 @@ fn render_number_literals(code: &str, formatted_number: &str) -> String {
             }
             continue;
         }
-        if !number_inserted {
-            out.push_str(formatted_number);
-            number_inserted = true;
+        if c == ';' {
+            break;
         }
+        if c == '[' {
+            if let Some(end) = chars[i + 1..].iter().position(|&ch| ch == ']') {
+                i += end + 2;
+                continue;
+            }
+        }
+        if matches!(c, '#' | '0' | '?' | ',' | '.' | '%') {
+            if !number_inserted {
+                out.push_str(formatted_number);
+                number_inserted = true;
+            }
+            i += 1;
+            continue;
+        }
+        out.push(c);
         i += 1;
     }
     if !number_inserted {
@@ -401,6 +427,24 @@ mod tests {
     fn number_backslash_escaped_literal_char_is_unwrapped() {
         let c = cell(CellValue::Number(5.0), Some(r"0\個"));
         assert_eq!(c.display_text(), "5個");
+    }
+
+    #[test]
+    fn number_unquoted_literal_text_surrounds_the_value() {
+        // レビュー指摘: 引用符で囲まれていないリテラル文字（丸括弧等）が
+        // 以前はすべて脱落していた。
+        let c = cell(CellValue::Number(12.0), Some(r"((0))"));
+        assert_eq!(c.display_text(), "((12))");
+    }
+
+    #[test]
+    fn number_section_separator_stops_before_leaking_the_negative_section() {
+        // `;`以降（負数/ゼロ/文字列セクション）はv1で未実装のセクション分岐のため
+        // 解釈を打ち切る。区切り文字とその後ろのリテラルをそのまま素通しすると、
+        // 会計書式で頻出する`#,##0;(#,##0)`のようなコードが正数値に対しても
+        // ";(1,234)"のように混入してしまう。
+        let c = cell(CellValue::Number(1234.0), Some("#,##0;(#,##0)"));
+        assert_eq!(c.display_text(), "1,234");
     }
 
     #[test]
